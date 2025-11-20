@@ -4,10 +4,12 @@ const User = require('../models/User');
 // Middleware để xác thực JWT token
 const authenticate = async (req, res, next) => {
   try {
+    console.log('authenticate middleware called for:', req.method, req.path);
     // Lấy token từ header
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('No auth header or invalid format');
       return res.status(401).json({
         success: false,
         message: 'Không có token, vui lòng đăng nhập'
@@ -40,6 +42,7 @@ const authenticate = async (req, res, next) => {
     req.user = userObj;
     req.userId = decoded.userId;
     
+    console.log('Authentication successful for user:', userObj.username, 'role:', userObj.roleName);
     next();
   } catch (error) {
     res.status(401).json({
@@ -52,7 +55,11 @@ const authenticate = async (req, res, next) => {
 // Middleware để kiểm tra role
 const authorize = (...roles) => {
   return async (req, res, next) => {
+    console.log('authorize middleware called, allowed roles:', roles);
+    console.log('User:', req.user ? req.user.username : 'No user');
+    
     if (!req.user) {
+      console.log('No user in request for authorize');
       return res.status(401).json({
         success: false,
         message: 'Vui lòng đăng nhập'
@@ -67,14 +74,18 @@ const authorize = (...roles) => {
       userRoleName = req.user.role.name || userRoleName;
     }
 
+    console.log('User role:', userRoleName, 'Allowed roles:', roles);
+
     // Kiểm tra role
     if (!roles.includes(userRoleName)) {
+      console.log('Access denied: user role not in allowed roles');
       return res.status(403).json({
         success: false,
         message: 'Bạn không có quyền truy cập'
       });
     }
 
+    console.log('Authorization successful');
     next();
   };
 };

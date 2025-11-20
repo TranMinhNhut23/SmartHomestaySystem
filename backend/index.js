@@ -27,6 +27,15 @@ app.use(cors({
 // Logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  console.log('Query params:', req.query);
+  console.log('Route params:', req.params);
+  console.log('Request URL:', req.url);
+  console.log('Request originalUrl:', req.originalUrl);
+  // Log body cho POST requests (trừ IPN để tránh log quá nhiều)
+  if (req.method === 'POST' && !req.path.includes('/momo/ipn') && req.body) {
+    const bodyStr = JSON.stringify(req.body);
+    console.log('Request body:', bodyStr ? bodyStr.substring(0, 200) : 'empty');
+  }
   next();
 });
 
@@ -36,11 +45,61 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve static files (uploads)
 const path = require('path');
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const uploadsPath = path.join(__dirname, 'uploads');
+const homestaysUploadsPath = path.join(__dirname, 'uploads', 'homestays');
+const idcardsUploadsPath = path.join(__dirname, 'uploads', 'idcards');
 
-// Routes
+// Tạo thư mục nếu chưa có
+const fs = require('fs');
+if (!fs.existsSync(uploadsPath)) {
+  fs.mkdirSync(uploadsPath, { recursive: true });
+}
+if (!fs.existsSync(homestaysUploadsPath)) {
+  fs.mkdirSync(homestaysUploadsPath, { recursive: true });
+}
+if (!fs.existsSync(idcardsUploadsPath)) {
+  fs.mkdirSync(idcardsUploadsPath, { recursive: true });
+}
+
+// Serve static files - ĐẶT TRƯỚC routes để tránh conflict
+app.use('/uploads', express.static(uploadsPath, {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, path) => {
+    res.set('Cache-Control', 'public, max-age=31536000');
+  }
+}));
+
+console.log('Static files serving from:', uploadsPath);
+console.log('Homestays images serving from:', homestaysUploadsPath);
+console.log('Full homestays path:', path.resolve(homestaysUploadsPath));
+
+// Routes - ĐẶT SAU static files
 app.use('/api/auth', require('./src/routes/authRoutes'));
 app.use('/api/roles', require('./src/routes/roleRoutes'));
+app.use('/api/homestays', require('./src/routes/homestayRoutes'));
+app.use('/api/bookings', require('./src/routes/bookingRoutes'));
+app.use('/api/host-requests', require('./src/routes/hostRequestRoutes'));
+app.use('/api/coupons', require('./src/routes/couponRoutes'));
+
+// Load payment routes với error handling
+try {
+  const paymentRoutes = require('./src/routes/paymentRoutes');
+  app.use('/api/payments', paymentRoutes);
+  console.log('Payment routes registered successfully');
+} catch (error) {
+  console.error('Error loading payment routes:', error);
+  console.error('Error stack:', error.stack);
+}
+
+console.log('Routes registered:');
+console.log('  - /api/auth');
+console.log('  - /api/roles');
+console.log('  - /api/homestays');
+console.log('  - /api/bookings');
+console.log('  - /api/payments');
+console.log('  - /api/host-requests');
+console.log('  - /api/coupons');
 
 // Route test
 app.get('/', (req, res) => {
@@ -71,8 +130,13 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
+// 404 handler - ĐẶT CUỐI CÙNG
 app.use((req, res) => {
+  console.log('404 Handler - Route not found:');
+  console.log('  Method:', req.method);
+  console.log('  Path:', req.path);
+  console.log('  URL:', req.url);
+  console.log('  Original URL:', req.originalUrl);
   res.status(404).json({
     success: false,
     message: 'Route không tồn tại'

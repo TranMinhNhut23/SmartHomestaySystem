@@ -15,3 +15,14 @@ router.get('/me', authenticate, authController.getCurrentUser.bind(authControlle
 module.exports = router;
 
 
+
+
+
+
+
+
+
+
+
+
+

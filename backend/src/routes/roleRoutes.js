@@ -36,3 +36,14 @@ router.delete('/:id/permissions', authorize('admin'), roleController.removePermi
 module.exports = router;
 
 
+
+
+
+
+
+
+
+
+
+
+
