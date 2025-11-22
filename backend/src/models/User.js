@@ -20,8 +20,17 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Password là bắt buộc'],
+    required: function() {
+      // Password không bắt buộc nếu đăng nhập bằng Google
+      return !this.googleId;
+    },
     minlength: [6, 'Password phải có ít nhất 6 ký tự']
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true, // Cho phép null và chỉ unique khi có giá trị
+    default: null
   },
   avatar: {
     type: String,
@@ -48,9 +57,10 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Hash password trước khi lưu
+// Hash password trước khi lưu (chỉ khi có password)
 userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) {
+  // Bỏ qua nếu không có password (ví dụ: đăng nhập bằng Google)
+  if (!this.password || !this.isModified('password')) {
     return next();
   }
   

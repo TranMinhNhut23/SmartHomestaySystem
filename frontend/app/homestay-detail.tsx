@@ -44,6 +44,7 @@ interface Homestay {
     name: string;
     pricePerNight: number;
     status: string;
+    maxGuests?: number;
   }>;
   amenities?: string[];
   host?: {
@@ -108,7 +109,8 @@ export default function HomestayDetailScreen() {
     }
   };
 
-  const formatPrice = (price: number) => {
+  const formatPrice = (price: number | undefined | null) => {
+    if (price === undefined || price === null || isNaN(price)) return '0';
     return new Intl.NumberFormat('vi-VN').format(price);
   };
 
@@ -220,39 +222,54 @@ export default function HomestayDetailScreen() {
     }
   }, [checkIn, checkOut, selectedRoomType]);
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | undefined | null) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      return date.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+    } catch (error) {
+      return '';
+    }
   };
 
-  const formatDateFull = (dateString: string) => {
+  const formatDateFull = (dateString: string | undefined | null) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
-    const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
-    const dayName = days[date.getDay()];
-    return `${dayName}, ${date.toLocaleDateString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    })}`;
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
+      const dayName = days[date.getDay()] || '';
+      return `${dayName}, ${date.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })}`;
+    } catch (error) {
+      return '';
+    }
   };
 
   const getDateInfo = (dateString: string) => {
     if (!dateString) return null;
-    const date = new Date(dateString);
-    const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-    return {
-      dayName: days[date.getDay()],
-      day: date.getDate(),
-      month: date.getMonth() + 1,
-      year: date.getFullYear(),
-      fullDate: formatDateFull(dateString),
-    };
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return null;
+      const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+      return {
+        dayName: days[date.getDay()] || '',
+        day: date.getDate() || 0,
+        month: date.getMonth() + 1 || 0,
+        year: date.getFullYear() || 0,
+        fullDate: formatDateFull(dateString),
+      };
+    } catch (error) {
+      return null;
+    }
   };
 
   // Calendar functions
@@ -937,11 +954,11 @@ export default function HomestayDetailScreen() {
                     </View>
                     {checkIn ? (
                       <View style={styles.roomBookingDateContent}>
-                        <ThemedText style={styles.roomBookingDateDay}>{getDateInfo(checkIn)?.day}</ThemedText>
+                        <ThemedText style={styles.roomBookingDateDay}>{getDateInfo(checkIn)?.day || 0}</ThemedText>
                         <ThemedText style={styles.roomBookingDateMonth}>
-                          Tháng {getDateInfo(checkIn)?.month}/{getDateInfo(checkIn)?.year}
+                          Tháng {getDateInfo(checkIn)?.month || 0}/{getDateInfo(checkIn)?.year || 0}
                         </ThemedText>
-                        <ThemedText style={styles.roomBookingDateDayName}>{getDateInfo(checkIn)?.dayName}</ThemedText>
+                        <ThemedText style={styles.roomBookingDateDayName}>{getDateInfo(checkIn)?.dayName || ''}</ThemedText>
                       </View>
                     ) : (
                       <ThemedText style={styles.roomBookingDatePlaceholder}>Chọn ngày</ThemedText>
@@ -986,11 +1003,11 @@ export default function HomestayDetailScreen() {
                     </View>
                     {checkOut ? (
                       <View style={styles.roomBookingDateContent}>
-                        <ThemedText style={styles.roomBookingDateDay}>{getDateInfo(checkOut)?.day}</ThemedText>
+                        <ThemedText style={styles.roomBookingDateDay}>{getDateInfo(checkOut)?.day || 0}</ThemedText>
                         <ThemedText style={styles.roomBookingDateMonth}>
-                          Tháng {getDateInfo(checkOut)?.month}/{getDateInfo(checkOut)?.year}
+                          Tháng {getDateInfo(checkOut)?.month || 0}/{getDateInfo(checkOut)?.year || 0}
                         </ThemedText>
-                        <ThemedText style={styles.roomBookingDateDayName}>{getDateInfo(checkOut)?.dayName}</ThemedText>
+                        <ThemedText style={styles.roomBookingDateDayName}>{getDateInfo(checkOut)?.dayName || ''}</ThemedText>
                       </View>
                     ) : (
                       <ThemedText style={styles.roomBookingDatePlaceholder}>Chọn ngày</ThemedText>
@@ -1015,7 +1032,7 @@ export default function HomestayDetailScreen() {
                         <Ionicons name="checkmark-circle" size={24} color="#10b981" />
                         <View style={styles.roomBookingAvailabilityInfo}>
                           <ThemedText style={styles.roomBookingAvailabilitySuccessText}>
-                            Còn {availableRooms.length} phòng trống
+                            Còn {availableRooms.length || 0} phòng trống
                           </ThemedText>
                           <ThemedText style={styles.roomBookingAvailabilitySubtext}>
                             Từ {formatDateFull(checkIn)} đến {formatDateFull(checkOut)}
@@ -1185,7 +1202,7 @@ export default function HomestayDetailScreen() {
                           isPast && styles.calendarDayTextPast,
                         ]}
                       >
-                        {day}
+                        {day || ''}
                       </ThemedText>
                     </TouchableOpacity>
                   );
@@ -1278,7 +1295,7 @@ export default function HomestayDetailScreen() {
                           isPast && styles.calendarDayTextPast,
                         ]}
                       >
-                        {day}
+                        {day || ''}
                       </ThemedText>
                     </TouchableOpacity>
                   );

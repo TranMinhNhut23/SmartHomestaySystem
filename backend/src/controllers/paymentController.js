@@ -332,6 +332,237 @@ class PaymentController {
       return res.redirect(`${frontendUrl}/payment-failed?message=${encodeURIComponent(error.message)}`);
     }
   }
+
+  // ==================== VNPAY METHODS ====================
+
+  // Tạo payment URL từ VNPay
+  async createVNPayPayment(req, res) {
+    try {
+      const { bookingId, amount, orderInfo } = req.body;
+      const userId = req.userId;
+
+      if (!bookingId || !amount) {
+        return res.status(400).json({
+          success: false,
+          message: 'bookingId và amount là bắt buộc'
+        });
+      }
+
+      // Kiểm tra booking thuộc về user
+      const booking = await Booking.findById(bookingId);
+      if (!booking) {
+        return res.status(404).json({
+          success: false,
+          message: 'Booking không tồn tại'
+        });
+      }
+
+      if (booking.guest.toString() !== userId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Bạn không có quyền thanh toán booking này'
+        });
+      }
+
+      // Tạo return URL
+      const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+      const returnUrl = `${baseUrl}/api/payments/vnpay/callback`;
+
+      // Lấy IP address của client
+      // VNPay chỉ chấp nhận IPv4, không chấp nhận IPv6
+      let ipAddr = req.headers['x-forwarded-for'] || 
+                   req.connection.remoteAddress || 
+                   req.socket.remoteAddress ||
+                   (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
+                   '127.0.0.1';
+      
+      // Lấy IP đầu tiên nếu có nhiều IP
+      ipAddr = ipAddr.split(',')[0].trim();
+      
+      // Convert IPv6-mapped IPv4 (::ffff:192.168.x.x) về IPv4
+      if (ipAddr.startsWith('::ffff:')) {
+        ipAddr = ipAddr.replace('::ffff:', '');
+      }
+      
+      // Nếu vẫn là IPv6, dùng IP mặc định
+      if (ipAddr.includes(':')) {
+        console.warn('⚠️ IPv6 address detected, using default IP:', ipAddr);
+        ipAddr = '127.0.0.1';
+      }
+
+      const bookingIdStr = bookingId.toString();
+      const paymentData = {
+        bookingId,
+        amount: parseInt(amount),
+        orderInfo: orderInfo || `Thanh toan don hang #${bookingIdStr.slice(-8)}`,
+        returnUrl,
+        ipAddr: ipAddr
+      };
+
+      // Log thông tin request
+      console.log('====================VNPAY PAYMENT REQUEST====================');
+      console.log('User ID:', userId);
+      console.log('Booking ID:', bookingId);
+      console.log('Amount:', amount);
+      console.log('Order Info:', orderInfo);
+      console.log('Return URL:', returnUrl);
+      console.log('IP Address:', ipAddr);
+      console.log('Base URL:', baseUrl);
+      console.log('============================================================');
+
+      const result = await paymentService.createVNPayPaymentUrl(paymentData);
+
+      // Lưu TxnRef vào booking để xử lý callback
+      booking.paymentTransactionId = result.txnRef;
+      await booking.save();
+
+      console.log('VNPay payment URL created successfully. TxnRef:', result.txnRef);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          paymentUrl: result.paymentUrl,
+          txnRef: result.txnRef
+        }
+      });
+    } catch (error) {
+      console.error('====================VNPAY PAYMENT ERROR====================');
+      console.error('Error in createVNPayPayment:', error.message);
+      console.error('Error stack:', error.stack);
+      console.error('Request body:', req.body);
+      console.error('==========================================================');
+      
+      // Trả về error message chi tiết hơn
+      const errorMessage = error.message || 'Tạo payment URL thất bại';
+      const isConfigError = errorMessage.includes('Thiếu cấu hình') || errorMessage.includes('VNPAY');
+      
+      res.status(isConfigError ? 500 : 500).json({
+        success: false,
+        message: errorMessage,
+        error: process.env.NODE_ENV === 'development' ? {
+          stack: error.stack,
+          originalError: error.originalError?.message
+        } : undefined
+      });
+    }
+  }
+
+  // Xử lý callback từ VNPay
+  async handleVNPayReturn(req, res) {
+    try {
+      console.log('--------------------VNPAY RETURN CALLBACK----------------');
+      console.log('VNPay return query:', JSON.stringify(req.query, null, 2));
+
+      const vnpayData = req.query;
+
+      // Verify payment
+      const verifyResult = paymentService.verifyVNPayPayment(vnpayData);
+
+      if (!verifyResult.verified) {
+        console.error('====================VNPAY SIGNATURE VERIFICATION FAILED====================');
+        console.error('❌ Invalid signature from VNPay');
+        console.error('Response Code:', verifyResult.response_code);
+        console.error('TxnRef:', verifyResult.txn_ref);
+        console.error('Debug Info:', JSON.stringify(verifyResult.debug, null, 2));
+        console.error('VNPay Data:', JSON.stringify(vnpayData, null, 2));
+        console.error('=======================================================================');
+        
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8081';
+        const errorMessage = verifyResult.error 
+          ? `Lỗi xác thực: ${verifyResult.error}` 
+          : 'Chữ ký không hợp lệ. Vui lòng kiểm tra cấu hình VNPAY_HASH_SECRET trong file .env';
+        return res.redirect(`${frontendUrl}/payment-failed?message=${encodeURIComponent(errorMessage)}`);
+      }
+
+      console.log('✅ Signature verified successfully');
+
+      // Lấy bookingId từ TxnRef (format: bookingId + timestamp)
+      // TxnRef có format: bookingId + timestamp, cần parse để lấy bookingId
+      const vnp_TxnRef = verifyResult.txn_ref;
+      let bookingId = null;
+
+      // Tìm booking bằng paymentTransactionId (đã lưu TxnRef)
+      if (vnp_TxnRef) {
+        const booking = await Booking.findOne({ paymentTransactionId: vnp_TxnRef });
+        if (booking) {
+          bookingId = booking._id.toString();
+        } else {
+          // Thử parse bookingId từ TxnRef (format: bookingId + timestamp)
+          // TxnRef thường là ObjectId (24 ký tự) + timestamp
+          // Tìm booking bằng cách match bookingId từ đầu TxnRef
+          if (vnp_TxnRef.length >= 24) {
+            const possibleBookingId = vnp_TxnRef.substring(0, 24);
+            const bookingById = await Booking.findById(possibleBookingId);
+            if (bookingById) {
+              bookingId = bookingById._id.toString();
+            }
+          }
+        }
+      }
+
+      if (!bookingId) {
+        console.error('❌ Cannot find bookingId from TxnRef:', vnp_TxnRef);
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8081';
+        return res.redirect(`${frontendUrl}/payment-failed?message=Không tìm thấy booking`);
+      }
+
+      // Tìm booking
+      const booking = await Booking.findById(bookingId);
+      if (!booking) {
+        console.error('❌ Booking not found:', bookingId);
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8081';
+        return res.redirect(`${frontendUrl}/payment-failed?message=Booking không tồn tại`);
+      }
+
+      console.log('Found booking:', {
+        bookingId: booking._id,
+        currentStatus: booking.status,
+        currentPaymentStatus: booking.paymentStatus
+      });
+
+      // Cập nhật payment status dựa trên ResponseCode
+      // ResponseCode = '00' nghĩa là thanh toán thành công
+      if (verifyResult.response_code === '00') {
+        // Thanh toán thành công
+        booking.paymentStatus = 'paid';
+        booking.paymentTransactionId = vnp_TxnRef;
+        booking.status = 'confirmed'; // Tự động confirm booking khi thanh toán thành công
+        await booking.save();
+
+        // Tăng số lần sử dụng coupon nếu có
+        if (booking.couponCode) {
+          await couponService.incrementCouponUsage(booking.couponCode);
+        }
+
+        console.log(`✅ Payment successful for booking ${bookingId}, TxnRef: ${vnp_TxnRef}`);
+        console.log('Updated booking:', {
+          paymentStatus: booking.paymentStatus,
+          status: booking.status,
+          paymentTransactionId: booking.paymentTransactionId,
+          couponCode: booking.couponCode
+        });
+
+        // Redirect đến trang thành công
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8081';
+        return res.redirect(`${frontendUrl}/payment-success?bookingId=${bookingId}&transId=${vnp_TxnRef}`);
+      } else {
+        // Thanh toán thất bại
+        booking.paymentStatus = 'failed';
+        await booking.save();
+
+        console.log(`❌ Payment failed for booking ${bookingId}, ResponseCode: ${verifyResult.response_code}`);
+
+        // Redirect đến trang thất bại
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8081';
+        const message = `Thanh toán thất bại (Mã lỗi: ${verifyResult.response_code})`;
+        return res.redirect(`${frontendUrl}/payment-failed?bookingId=${bookingId}&message=${encodeURIComponent(message)}`);
+      }
+    } catch (error) {
+      console.error('Handle VNPay return error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8081';
+      return res.redirect(`${frontendUrl}/payment-failed?message=${encodeURIComponent(error.message)}`);
+    }
+  }
 }
 
 module.exports = new PaymentController();

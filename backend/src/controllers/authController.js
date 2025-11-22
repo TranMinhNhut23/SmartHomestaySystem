@@ -115,6 +115,34 @@ class AuthController {
       });
     }
   }
+
+  // Đăng nhập bằng Google
+  async loginWithGoogle(req, res) {
+    try {
+      const { idToken } = req.body;
+
+      if (!idToken) {
+        return res.status(400).json({
+          success: false,
+          message: 'Vui lòng cung cấp Google ID token'
+        });
+      }
+
+      const result = await authService.loginWithGoogle(idToken);
+
+      res.status(200).json({
+        success: true,
+        message: 'Đăng nhập bằng Google thành công',
+        data: result
+      });
+    } catch (error) {
+      console.error('Google login error:', error);
+      res.status(401).json({
+        success: false,
+        message: error.message || 'Đăng nhập bằng Google thất bại'
+      });
+    }
+  }
 }
 
 module.exports = new AuthController();

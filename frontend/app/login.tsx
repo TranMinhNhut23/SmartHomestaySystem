@@ -9,7 +9,6 @@ import {
   Alert,
   ActivityIndicator,
   View,
-  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
@@ -19,13 +18,15 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { signInWithGoogle } from '@/utils/googleAuth';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
@@ -44,6 +45,28 @@ export default function LoginScreen() {
       Alert.alert('Đăng nhập thất bại', error.message || 'Vui lòng thử lại');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoading(true);
+    try {
+      // Lấy ID token từ Google
+      const googleResult = await signInWithGoogle();
+      
+      if (!googleResult || !googleResult.idToken) {
+        Alert.alert('Thông báo', 'Đăng nhập bằng Google đã bị hủy');
+        return;
+      }
+
+      // Gửi ID token đến backend
+      await loginWithGoogle(googleResult.idToken);
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      console.error('Google login error:', error);
+      Alert.alert('Đăng nhập thất bại', error.message || 'Không thể đăng nhập bằng Google. Vui lòng thử lại');
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -175,10 +198,36 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
 
+            {/* Google Login Button */}
+            <TouchableOpacity
+              style={[
+                styles.googleButton,
+                (isLoading || isGoogleLoading) && styles.buttonDisabled
+              ]}
+              onPress={handleGoogleLogin}
+              disabled={isLoading || isGoogleLoading}
+              activeOpacity={0.8}
+            >
+              <View style={styles.googleButtonContent}>
+                {isGoogleLoading ? (
+                  <ActivityIndicator color="#4285F4" />
+                ) : (
+                  <>
+                    <View style={styles.googleIconContainer}>
+                      <ThemedText style={styles.googleIconText}>G</ThemedText>
+                    </View>
+                    <ThemedText style={styles.googleButtonText}>
+                      Đăng nhập bằng Google
+                    </ThemedText>
+                  </>
+                )}
+              </View>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.registerButton}
               onPress={() => router.push('/register' as any)}
-              disabled={isLoading}
+              disabled={isLoading || isGoogleLoading}
             >
               <ThemedText style={styles.registerButtonText}>
                 Chưa có tài khoản?{' '}
@@ -348,5 +397,42 @@ const styles = StyleSheet.create({
   registerButtonText: {
     fontSize: 15,
     color: '#666',
+  },
+  googleButton: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    paddingVertical: 14,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  googleButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  googleIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#4285F4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  googleIconText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4285F4',
   },
 });

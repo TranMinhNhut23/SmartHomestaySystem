@@ -18,5 +18,14 @@ router.post('/momo/ipn', paymentController.handleMoMoIPN.bind(paymentController)
 // Return URL sau khi thanh toán (không cần authenticate)
 router.get('/momo/return', paymentController.handleMoMoReturn.bind(paymentController));
 
+// VNPay payment routes
+router.post('/vnpay/create', (req, res, next) => {
+  console.log('POST /api/payments/vnpay/create route matched');
+  next();
+}, authenticate, paymentController.createVNPayPayment.bind(paymentController));
+
+// VNPay return callback (không cần authenticate)
+router.get('/vnpay/callback', paymentController.handleVNPayReturn.bind(paymentController));
+
 module.exports = router;
 

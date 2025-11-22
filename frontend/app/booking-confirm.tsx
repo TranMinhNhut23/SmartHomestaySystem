@@ -198,19 +198,25 @@ export default function BookingConfirmScreen() {
     });
   };
 
-  const formatDateFull = (dateString: string) => {
+  const formatDateFull = (dateString: string | undefined | null) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
-    const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
-    const dayName = days[date.getDay()];
-    return `${dayName}, ${date.toLocaleDateString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    })}`;
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
+      const dayName = days[date.getDay()];
+      return `${dayName}, ${date.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })}`;
+    } catch (error) {
+      return '';
+    }
   };
 
-  const formatPrice = (price: number) => {
+  const formatPrice = (price: number | undefined | null) => {
+    if (price === undefined || price === null || isNaN(price)) return '0';
     return new Intl.NumberFormat('vi-VN').format(price);
   };
 
@@ -219,11 +225,17 @@ export default function BookingConfirmScreen() {
     return roomType?.label || type;
   };
 
-  const calculateNumberOfNights = (checkIn?: string, checkOut?: string) => {
+  const calculateNumberOfNights = (checkIn?: string, checkOut?: string): number => {
     if (!checkIn || !checkOut) return 0;
-    const checkInDate = new Date(checkIn);
-    const checkOutDate = new Date(checkOut);
-    return Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
+    try {
+      const checkInDate = new Date(checkIn);
+      const checkOutDate = new Date(checkOut);
+      if (isNaN(checkInDate.getTime()) || isNaN(checkOutDate.getTime())) return 0;
+      const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
+      return isNaN(nights) || nights < 0 ? 0 : nights;
+    } catch (error) {
+      return 0;
+    }
   };
 
   const handlePayment = async () => {
@@ -269,12 +281,13 @@ export default function BookingConfirmScreen() {
       // Load booking từ API để có đầy đủ thông tin
       await loadBookingFromAPI(newBookingId);
 
-      // Tạo payment URL từ MoMo
-      console.log('Creating payment URL for booking:', newBookingId);
+      // Tạo payment URL dựa trên phương thức thanh toán đã chọn
+      console.log('Creating payment URL for booking:', newBookingId, 'Method:', selectedPaymentMethod);
       const paymentResponse = await apiService.createPayment(
         newBookingId,
         displayBooking.totalPrice,
-        orderInfo
+        orderInfo,
+        selectedPaymentMethod
       );
 
       if (paymentResponse.success && paymentResponse.data?.paymentUrl) {
@@ -319,18 +332,46 @@ export default function BookingConfirmScreen() {
 
   // Convert bookingFromAPI sang format BookingData nếu cần
   const displayBooking: BookingData = bookingFromAPI ? {
-    homestayId: bookingFromAPI.homestay._id,
-    roomId: bookingFromAPI.room._id,
+    homestayId: typeof bookingFromAPI.homestay === 'string' 
+      ? bookingFromAPI.homestay 
+      : (bookingFromAPI.homestay?._id || ''),
+    roomId: typeof bookingFromAPI.room === 'string'
+      ? bookingFromAPI.room
+      : (bookingFromAPI.room?._id || ''),
     checkIn: bookingFromAPI.checkIn,
     checkOut: bookingFromAPI.checkOut,
-    numberOfGuests: bookingFromAPI.numberOfGuests,
-    guestInfo: bookingFromAPI.guestInfo,
-    totalPrice: bookingFromAPI.totalPrice,
-    originalPrice: bookingFromAPI.originalPrice,
-    discountAmount: bookingFromAPI.discountAmount,
-    couponCode: bookingFromAPI.couponCode,
-    homestay: bookingFromAPI.homestay,
-    room: bookingFromAPI.room,
+    numberOfGuests: bookingFromAPI.numberOfGuests || 1,
+    guestInfo: bookingFromAPI.guestInfo || bookingData?.guestInfo || {
+      fullName: '',
+      phone: '',
+      email: '',
+      specialRequests: ''
+    },
+    totalPrice: bookingFromAPI.totalPrice || 0,
+    originalPrice: bookingFromAPI.originalPrice || 0,
+    discountAmount: bookingFromAPI.discountAmount || 0,
+    couponCode: bookingFromAPI.couponCode || null,
+    homestay: (bookingFromAPI.homestay && typeof bookingFromAPI.homestay === 'object') 
+      ? bookingFromAPI.homestay 
+      : (bookingData?.homestay || {
+          _id: '',
+          name: '',
+          address: {
+            province: { name: '' },
+            district: { name: '' },
+            ward: { name: '' },
+            street: ''
+          }
+        } as any),
+    room: (bookingFromAPI.room && typeof bookingFromAPI.room === 'object') 
+      ? bookingFromAPI.room 
+      : (bookingData?.room || {
+          _id: '',
+          name: '',
+          type: '',
+          pricePerNight: 0,
+          maxGuests: 0
+        } as any),
   } : bookingData!;
 
   const numberOfNights = calculateNumberOfNights(displayBooking.checkIn, displayBooking.checkOut);
@@ -490,7 +531,7 @@ export default function BookingConfirmScreen() {
               <View style={styles.successInfo}>
                 <Ionicons name="receipt-outline" size={20} color="#fff" />
                 <ThemedText style={styles.successInfoText}>
-                  Mã đơn: #{bookingFromAPI?._id.slice(-8) || ''}
+                  Mã đơn: #{bookingFromAPI?._id ? bookingFromAPI._id.slice(-8) : ''}
                 </ThemedText>
               </View>
             </LinearGradient>
@@ -544,11 +585,18 @@ export default function BookingConfirmScreen() {
               <Ionicons name="home" size={28} color="#0a7ea4" />
             </View>
             <View style={styles.homestayContent}>
-              <ThemedText style={styles.homestayName}>{displayBooking.homestay.name}</ThemedText>
+              <ThemedText style={styles.homestayName}>
+                {displayBooking.homestay?.name || ''}
+              </ThemedText>
               <View style={styles.addressRow}>
                 <Ionicons name="location" size={16} color="#64748b" />
                 <ThemedText style={styles.homestayAddress}>
-                  {displayBooking.homestay.address.street}, {displayBooking.homestay.address.ward.name}, {displayBooking.homestay.address.district.name}, {displayBooking.homestay.address.province.name}
+                  {[
+                    displayBooking.homestay?.address?.street || '',
+                    displayBooking.homestay?.address?.ward?.name,
+                    displayBooking.homestay?.address?.district?.name,
+                    displayBooking.homestay?.address?.province?.name,
+                  ].filter(Boolean).join(', ')}
                 </ThemedText>
               </View>
             </View>
@@ -569,14 +617,18 @@ export default function BookingConfirmScreen() {
                 <Ionicons name="cube-outline" size={16} color="#64748b" />
                 <ThemedText style={styles.infoLabel}>Tên phòng</ThemedText>
               </View>
-              <ThemedText style={styles.infoValue}>{displayBooking.room.name}</ThemedText>
+              <ThemedText style={styles.infoValue}>
+                {displayBooking.room?.name || ''}
+              </ThemedText>
             </View>
             <View style={styles.infoItem}>
               <View style={styles.infoItemHeader}>
                 <Ionicons name="layers-outline" size={16} color="#64748b" />
                 <ThemedText style={styles.infoLabel}>Loại phòng</ThemedText>
               </View>
-              <ThemedText style={styles.infoValue}>{getRoomTypeLabel(displayBooking.room.type)}</ThemedText>
+              <ThemedText style={styles.infoValue}>
+                {displayBooking.room?.type ? getRoomTypeLabel(displayBooking.room.type) : ''}
+              </ThemedText>
             </View>
             <View style={styles.infoItem}>
               <View style={styles.infoItemHeader}>
@@ -584,7 +636,7 @@ export default function BookingConfirmScreen() {
                 <ThemedText style={styles.infoLabel}>Giá/đêm</ThemedText>
               </View>
               <ThemedText style={[styles.infoValue, styles.priceHighlight]}>
-                {formatPrice(displayBooking.room.pricePerNight)} VNĐ
+                {displayBooking.room?.pricePerNight ? `${formatPrice(displayBooking.room.pricePerNight)} VNĐ` : ''}
               </ThemedText>
             </View>
             <View style={styles.infoItem}>
@@ -592,7 +644,7 @@ export default function BookingConfirmScreen() {
                 <Ionicons name="people-outline" size={16} color="#64748b" />
                 <ThemedText style={styles.infoLabel}>Số khách</ThemedText>
               </View>
-              <ThemedText style={styles.infoValue}>{displayBooking.numberOfGuests} khách</ThemedText>
+              <ThemedText style={styles.infoValue}>{String(displayBooking.numberOfGuests || 0)} khách</ThemedText>
             </View>
           </View>
         </View>
@@ -612,13 +664,13 @@ export default function BookingConfirmScreen() {
               </View>
               <View style={styles.dateContent}>
                 <ThemedText style={styles.dateLabel}>Nhận phòng</ThemedText>
-                <ThemedText style={styles.dateValue}>{formatDateFull(displayBooking.checkIn)}</ThemedText>
+                <ThemedText style={styles.dateValue}>{formatDateFull(displayBooking.checkIn) || 'Chưa chọn'}</ThemedText>
               </View>
             </View>
             <View style={styles.dateDivider}>
               <View style={styles.dateDividerLine} />
               <View style={styles.nightsBadge}>
-                <ThemedText style={styles.nightsBadgeText}>{numberOfNights}</ThemedText>
+                <ThemedText style={styles.nightsBadgeText}>{String(numberOfNights || 0)}</ThemedText>
                 <ThemedText style={styles.nightsBadgeLabel}>đêm</ThemedText>
               </View>
               <View style={styles.dateDividerLine} />
@@ -629,7 +681,7 @@ export default function BookingConfirmScreen() {
               </View>
               <View style={styles.dateContent}>
                 <ThemedText style={styles.dateLabel}>Trả phòng</ThemedText>
-                <ThemedText style={styles.dateValue}>{formatDateFull(displayBooking.checkOut)}</ThemedText>
+                <ThemedText style={styles.dateValue}>{formatDateFull(displayBooking.checkOut) || 'Chưa chọn'}</ThemedText>
               </View>
             </View>
           </View>
@@ -650,23 +702,29 @@ export default function BookingConfirmScreen() {
             <View style={styles.guestInfo}>
               <View style={styles.guestInfoRow}>
                 <Ionicons name="person-outline" size={16} color="#64748b" />
-                <ThemedText style={styles.guestInfoValue} numberOfLines={1}>{displayBooking.guestInfo.fullName}</ThemedText>
+                <ThemedText style={styles.guestInfoValue} numberOfLines={1}>
+                  {displayBooking.guestInfo?.fullName || ''}
+                </ThemedText>
                 <View style={styles.guestInfoDivider} />
                 <Ionicons name="call-outline" size={16} color="#64748b" />
-                <ThemedText style={styles.guestInfoValue} numberOfLines={1}>{displayBooking.guestInfo.phone}</ThemedText>
+                <ThemedText style={styles.guestInfoValue} numberOfLines={1}>
+                  {displayBooking.guestInfo?.phone || ''}
+                </ThemedText>
                 <View style={styles.guestInfoDivider} />
                 <Ionicons name="mail-outline" size={16} color="#64748b" />
-                <ThemedText style={styles.guestInfoValue} numberOfLines={1} ellipsizeMode="tail">{displayBooking.guestInfo.email}</ThemedText>
+                <ThemedText style={styles.guestInfoValue} numberOfLines={1} ellipsizeMode="tail">
+                  {displayBooking.guestInfo?.email || ''}
+                </ThemedText>
               </View>
             </View>
           </View>
-          {displayBooking.guestInfo.specialRequests && (
+          {displayBooking.guestInfo?.specialRequests && (
             <View style={styles.specialRequestsCard}>
               <View style={styles.specialRequestsHeader}>
                 <Ionicons name="star" size={18} color="#f59e0b" />
                 <ThemedText style={styles.specialRequestsLabel}>Yêu cầu đặc biệt</ThemedText>
               </View>
-              <ThemedText style={styles.specialRequestsValue}>{displayBooking.guestInfo.specialRequests}</ThemedText>
+              <ThemedText style={styles.specialRequestsValue}>{displayBooking.guestInfo?.specialRequests || ''}</ThemedText>
             </View>
           )}
         </View>
@@ -691,12 +749,12 @@ export default function BookingConfirmScreen() {
                   <Ionicons name="checkmark-circle" size={24} color="#10b981" />
                 </View>
                 <View style={styles.couponInfoTextContainer}>
-                  <ThemedText style={styles.couponInfoCode}>{displayBooking.couponCode}</ThemedText>
+                  <ThemedText style={styles.couponInfoCode}>{displayBooking.couponCode || ''}</ThemedText>
                 </View>
                 <View style={styles.couponInfoDivider} />
                 <View style={styles.couponInfoRight}>
                   <ThemedText style={styles.couponInfoDiscount}>
-                    -{formatPrice(displayBooking.discountAmount)} VNĐ
+                    -{formatPrice(displayBooking.discountAmount || 0)} VNĐ
                   </ThemedText>
                 </View>
               </View>
@@ -865,11 +923,11 @@ export default function BookingConfirmScreen() {
               <View style={styles.priceRowLeft}>
                 <Ionicons name="bed-outline" size={16} color="#64748b" />
                 <ThemedText style={styles.priceLabel}>
-                  {formatPrice(displayBooking.room.pricePerNight)} VNĐ × {numberOfNights} đêm
+                  {displayBooking.room?.pricePerNight ? `${formatPrice(displayBooking.room.pricePerNight)} VNĐ × ${String(numberOfNights)} đêm` : ''}
                 </ThemedText>
               </View>
               <ThemedText style={styles.priceValue}>
-                {formatPrice(displayBooking.room.pricePerNight * numberOfNights)} VNĐ
+                {displayBooking.room?.pricePerNight && numberOfNights ? `${formatPrice(displayBooking.room.pricePerNight * numberOfNights)} VNĐ` : ''}
               </ThemedText>
             </View>
             
@@ -880,12 +938,12 @@ export default function BookingConfirmScreen() {
                   <Ionicons name="ticket" size={16} color="#10b981" />
                   <View style={styles.couponDiscountInfo}>
                     <ThemedText style={styles.priceLabel}>
-                      Mã giảm giá ({displayBooking.couponCode})
+                      Mã giảm giá ({displayBooking.couponCode || ''})
                     </ThemedText>
                   </View>
                 </View>
                 <ThemedText style={styles.discountValue}>
-                  -{formatPrice(displayBooking.discountAmount)} VNĐ
+                  -{formatPrice(displayBooking.discountAmount || 0)} VNĐ
                 </ThemedText>
               </View>
             )}

@@ -12,6 +12,9 @@ router.post('/login', authController.login.bind(authController));
 // Lấy thông tin user hiện tại (cần đăng nhập)
 router.get('/me', authenticate, authController.getCurrentUser.bind(authController));
 
+// Đăng nhập bằng Google
+router.post('/google', authController.loginWithGoogle.bind(authController));
+
 module.exports = router;
 
 

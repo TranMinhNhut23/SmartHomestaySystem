@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const Role = require('../models/Role');
 const jwtConfig = require('../config/jwt');
@@ -146,6 +147,101 @@ class AuthService {
       token,
       refreshToken
     };
+  }
+
+  // Xác thực Google ID token và đăng nhập/đăng ký
+  async loginWithGoogle(idToken) {
+    try {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      
+      if (!clientId) {
+        throw new Error('Thiếu cấu hình GOOGLE_CLIENT_ID trong file .env');
+      }
+
+      const client = new OAuth2Client(clientId);
+
+      // Verify ID token
+      const ticket = await client.verifyIdToken({
+        idToken: idToken,
+        audience: clientId
+      });
+
+      const payload = ticket.getPayload();
+      const { sub: googleId, email, name, picture } = payload;
+
+      if (!email) {
+        throw new Error('Không thể lấy email từ Google account');
+      }
+
+      // Tìm user theo googleId hoặc email
+      let user = await User.findOne({
+        $or: [
+          { googleId: googleId },
+          { email: email.toLowerCase() }
+        ]
+      }).populate('role');
+
+      if (user) {
+        // User đã tồn tại - cập nhật googleId nếu chưa có
+        if (!user.googleId) {
+          user.googleId = googleId;
+          if (picture && !user.avatar) {
+            user.avatar = picture;
+          }
+          await user.save();
+        }
+      } else {
+        // Tạo user mới
+        let role = await Role.findOne({ name: 'user' });
+        if (!role) {
+          const { initializeRoles } = require('../config/roles');
+          await initializeRoles();
+          role = await Role.findOne({ name: 'user' });
+          if (!role) {
+            throw new Error('Không thể tạo role user. Vui lòng liên hệ quản trị viên.');
+          }
+        }
+
+        // Tạo username từ email (lấy phần trước @)
+        const usernameBase = email.split('@')[0];
+        let username = usernameBase;
+        let counter = 1;
+        
+        // Đảm bảo username unique
+        while (await User.findOne({ username })) {
+          username = `${usernameBase}${counter}`;
+          counter++;
+        }
+
+        user = new User({
+          username,
+          email: email.toLowerCase(),
+          googleId: googleId,
+          avatar: picture || null,
+          role: role._id,
+          roleName: 'user',
+          password: null // Không cần password khi đăng nhập bằng Google
+        });
+
+        await user.save();
+        user = await User.findById(user._id).populate('role');
+      }
+
+      // Tạo token
+      const token = this.generateToken(user._id);
+      const refreshToken = this.generateRefreshToken(user._id);
+
+      console.log('Google login successful:', user._id);
+
+      return {
+        user: user.toJSON(),
+        token,
+        refreshToken
+      };
+    } catch (error) {
+      console.error('Google login error:', error);
+      throw new Error(error.message || 'Đăng nhập bằng Google thất bại');
+    }
   }
 }
 

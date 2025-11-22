@@ -21,6 +21,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (userData: RegisterData) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -132,6 +133,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async (idToken: string) => {
+    try {
+      const response = await apiService.loginWithGoogle(idToken);
+      if (response.success && response.data) {
+        await saveToken(response.data.token);
+        setUser(response.data.user);
+      } else {
+        throw new Error(response.message || 'Đăng nhập bằng Google thất bại');
+      }
+    } catch (error: any) {
+      throw new Error(error.message || 'Đăng nhập bằng Google thất bại');
+    }
+  };
+
   const logout = async () => {
     // Set states immediately for instant UI update
     setUser(null);
@@ -176,6 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user && !!token,
         login,
         register,
+        loginWithGoogle,
         logout,
         refreshUser,
       }}

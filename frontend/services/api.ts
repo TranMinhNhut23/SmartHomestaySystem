@@ -193,6 +193,17 @@ class ApiService {
     return this.request<any>('/auth/me');
   }
 
+  async loginWithGoogle(idToken: string) {
+    return this.request<{
+      user: any;
+      token: string;
+      refreshToken: string;
+    }>('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ idToken }),
+    });
+  }
+
   // Homestay endpoints
   async getProvinces() {
     return this.request<any>('/homestays/provinces', {
@@ -412,8 +423,13 @@ class ApiService {
     });
   }
 
-  async createPayment(bookingId: string, amount: number, orderInfo?: string) {
-    return this.request<any>('/payments/create', {
+  async createPayment(bookingId: string, amount: number, orderInfo?: string, paymentMethod: 'momo' | 'vnpay' = 'momo') {
+    // Chọn endpoint dựa trên payment method
+    const endpoint = paymentMethod === 'vnpay' 
+      ? '/payments/vnpay/create' 
+      : '/payments/create';
+    
+    return this.request<any>(endpoint, {
       method: 'POST',
       body: JSON.stringify({
         bookingId,
