@@ -29,6 +29,13 @@ export function HostQuickActionsSection() {
       gradient: ['#f59e0b', '#f97316'],
     },
     {
+      id: 'refund-requests',
+      title: 'Duyệt Hoàn Tiền',
+      icon: 'cash',
+      route: '/host-refund-requests',
+      gradient: ['#ef4444', '#dc2626'],
+    },
+    {
       id: 'promotions',
       title: 'Khuyến Mãi',
       icon: 'pricetags',
@@ -68,44 +75,44 @@ export function HostQuickActionsSection() {
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 24,
+    marginBottom: 20,
     paddingHorizontal: 0,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: '#11181C',
-    marginBottom: 18,
+    marginBottom: 14,
     letterSpacing: 0.2,
   },
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    
+    gap: 12,
   },
   actionCard: {
     width: '48%',
-    borderRadius: 18,
+    borderRadius: 16,
     overflow: 'hidden',
-    marginBottom: 16,
+    marginBottom: 0,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   actionGradient: {
-    padding: 22,
+    padding: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 120,
+    minHeight: 110,
   },
   iconWrapper: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   actionTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#fff',
     textAlign: 'center',

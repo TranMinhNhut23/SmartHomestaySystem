@@ -99,16 +99,18 @@ export default function BookingConfirmScreen() {
     bookingId?: string;
   }>();
   const { user, isAuthenticated } = useAuth();
-  const { createBooking, getBookingById } = useBooking();
+  const { createBooking, getBookingById, updateBookingStatus } = useBooking();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   const [bookingData, setBookingData] = useState<BookingData | null>(null);
   const [bookingFromAPI, setBookingFromAPI] = useState<BookingFromAPI | null>(null);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'momo' | 'vnpay' | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'momo' | 'vnpay' | 'wallet' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingBooking, setIsLoadingBooking] = useState(false);
   const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [isLoadingWallet, setIsLoadingWallet] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -148,7 +150,7 @@ export default function BookingConfirmScreen() {
         
         // Set payment method nếu đã có
         if (booking.paymentMethod) {
-          setSelectedPaymentMethod(booking.paymentMethod as 'momo' | 'vnpay');
+          setSelectedPaymentMethod(booking.paymentMethod as 'momo' | 'vnpay' | 'wallet');
         }
       } else {
         throw new Error(response.message || 'Không thể tải thông tin đặt phòng');
@@ -170,7 +172,11 @@ export default function BookingConfirmScreen() {
         console.log('Screen focused, reloading booking:', currentBookingId);
         loadBookingFromAPI(currentBookingId);
       }
-    }, [currentBookingId, isAuthenticated, loadBookingFromAPI])
+      // Reload wallet balance khi quay lại màn hình (để cập nhật số dư sau khi nạp tiền)
+      if (isAuthenticated) {
+        loadWalletBalance();
+      }
+    }, [currentBookingId, isAuthenticated, loadBookingFromAPI, loadWalletBalance])
   );
 
   // Reload booking khi app trở lại foreground (sau khi thanh toán)
@@ -187,6 +193,31 @@ export default function BookingConfirmScreen() {
     };
   }, [currentBookingId, isAuthenticated, loadBookingFromAPI]);
 
+  // Load wallet balance
+  const loadWalletBalance = useCallback(async () => {
+    if (!isAuthenticated) return;
+    
+    try {
+      setIsLoadingWallet(true);
+      const response = await apiService.getWallet();
+      
+      if (response.success && response.data) {
+        setWalletBalance(response.data.balance || 0);
+      }
+    } catch (error: any) {
+      console.error('Error loading wallet balance:', error);
+      // Không hiển thị error, chỉ log
+    } finally {
+      setIsLoadingWallet(false);
+    }
+  }, [isAuthenticated]);
+
+  // Load wallet khi component mount và khi authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadWalletBalance();
+    }
+  }, [isAuthenticated, loadWalletBalance]);
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
@@ -238,6 +269,47 @@ export default function BookingConfirmScreen() {
     }
   };
 
+  const handleCancelBooking = async () => {
+    if (!currentBookingId) {
+      Alert.alert('Lỗi', 'Không tìm thấy thông tin đặt phòng');
+      return;
+    }
+
+    Alert.alert(
+      'Hủy đặt phòng',
+      'Bạn có chắc chắn muốn hủy đặt phòng này?',
+      [
+        { text: 'Không', style: 'cancel' },
+        {
+          text: 'Hủy đặt phòng',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsSubmitting(true);
+              const response = await updateBookingStatus(currentBookingId, 'cancelled');
+              
+              if (response.success) {
+                Alert.alert('Thành công', 'Đặt phòng đã được hủy', [
+                  {
+                    text: 'OK',
+                    onPress: () => router.replace('/my-bookings'),
+                  },
+                ]);
+              } else {
+                throw new Error(response.message || 'Hủy đặt phòng thất bại');
+              }
+            } catch (error: any) {
+              console.error('Error cancelling booking:', error);
+              Alert.alert('Lỗi', error.message || 'Không thể hủy đặt phòng');
+            } finally {
+              setIsSubmitting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handlePayment = async () => {
     if (!selectedPaymentMethod) {
       Alert.alert('Lỗi', 'Vui lòng chọn phương thức thanh toán');
@@ -251,6 +323,34 @@ export default function BookingConfirmScreen() {
 
     try {
       setIsSubmitting(true);
+
+      // Kiểm tra số dư ví nếu thanh toán bằng ví
+      if (selectedPaymentMethod === 'wallet') {
+        if (walletBalance === null) {
+          Alert.alert('Lỗi', 'Không thể lấy thông tin số dư ví. Vui lòng thử lại.');
+          return;
+        }
+        
+        if (walletBalance < displayBooking.totalPrice) {
+          const missingAmount = displayBooking.totalPrice - walletBalance;
+          Alert.alert(
+            'Số dư không đủ',
+            `Số dư ví của bạn không đủ để thanh toán.\n\n` +
+            `Số dư hiện tại: ${formatPrice(walletBalance)} VNĐ\n` +
+            `Số tiền cần thanh toán: ${formatPrice(displayBooking.totalPrice)} VNĐ\n` +
+            `Thiếu: ${formatPrice(missingAmount)} VNĐ\n\n` +
+            `Vui lòng nạp thêm tiền vào ví để tiếp tục thanh toán.`,
+            [
+              { text: 'Hủy', style: 'cancel' },
+              { 
+                text: 'Nạp tiền', 
+                onPress: () => router.push('/wallet-deposit')
+              }
+            ]
+          );
+          return;
+        }
+      }
 
       // Tạo booking trước (với paymentMethod = null, paymentStatus = pending)
       const bookingPayload = {
@@ -273,7 +373,6 @@ export default function BookingConfirmScreen() {
       }
 
       const newBookingId = bookingResponse.data._id;
-      const orderInfo = `Thanh toán đặt phòng #${newBookingId.slice(-8)}`;
 
       // Lưu bookingId để có thể reload sau khi quay lại từ payment gateway
       setCurrentBookingId(newBookingId);
@@ -281,30 +380,61 @@ export default function BookingConfirmScreen() {
       // Load booking từ API để có đầy đủ thông tin
       await loadBookingFromAPI(newBookingId);
 
-      // Tạo payment URL dựa trên phương thức thanh toán đã chọn
-      console.log('Creating payment URL for booking:', newBookingId, 'Method:', selectedPaymentMethod);
-      const paymentResponse = await apiService.createPayment(
-        newBookingId,
-        displayBooking.totalPrice,
-        orderInfo,
-        selectedPaymentMethod
-      );
+      // Xử lý thanh toán theo phương thức đã chọn
+      if (selectedPaymentMethod === 'wallet') {
+        // Thanh toán bằng ví - gọi API trực tiếp
+        console.log('Paying with wallet for booking:', newBookingId);
+        const walletPaymentResponse = await apiService.payBookingWithWallet(newBookingId);
 
-      if (paymentResponse.success && paymentResponse.data?.paymentUrl) {
-        // Mở payment URL trong browser
-        const canOpen = await Linking.canOpenURL(paymentResponse.data.paymentUrl);
-        
-        if (canOpen) {
-          await Linking.openURL(paymentResponse.data.paymentUrl);
-          // User sẽ được redirect đến MoMo để thanh toán
-          // Sau khi thanh toán xong, MoMo sẽ redirect về redirectUrl
-          // Backend sẽ xử lý IPN và return URL
-          // Khi user quay lại app, useFocusEffect và AppState sẽ tự động reload booking
+        if (walletPaymentResponse.success) {
+          // Reload booking và wallet balance
+          await loadBookingFromAPI(newBookingId);
+          await loadWalletBalance();
+          
+          Alert.alert(
+            'Thanh toán thành công',
+            'Đơn đặt phòng của bạn đã được thanh toán thành công bằng ví.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  // Có thể navigate đến trang booking detail hoặc my-bookings
+                  // router.replace('/my-bookings');
+                }
+              }
+            ]
+          );
         } else {
-          throw new Error('Không thể mở link thanh toán');
+          throw new Error(walletPaymentResponse.message || 'Thanh toán bằng ví thất bại');
         }
       } else {
-        throw new Error(paymentResponse.message || 'Tạo payment URL thất bại');
+        // Thanh toán qua MoMo/VNPay - tạo payment URL
+        const orderInfo = `Thanh toán đặt phòng #${newBookingId.slice(-8)}`;
+        
+        console.log('Creating payment URL for booking:', newBookingId, 'Method:', selectedPaymentMethod);
+        const paymentResponse = await apiService.createPayment(
+          newBookingId,
+          displayBooking.totalPrice,
+          orderInfo,
+          selectedPaymentMethod
+        );
+
+        if (paymentResponse.success && paymentResponse.data?.paymentUrl) {
+          // Mở payment URL trong browser
+          const canOpen = await Linking.canOpenURL(paymentResponse.data.paymentUrl);
+          
+          if (canOpen) {
+            await Linking.openURL(paymentResponse.data.paymentUrl);
+            // User sẽ được redirect đến MoMo để thanh toán
+            // Sau khi thanh toán xong, MoMo sẽ redirect về redirectUrl
+            // Backend sẽ xử lý IPN và return URL
+            // Khi user quay lại app, useFocusEffect và AppState sẽ tự động reload booking
+          } else {
+            throw new Error('Không thể mở link thanh toán');
+          }
+        } else {
+          throw new Error(paymentResponse.message || 'Tạo payment URL thất bại');
+        }
       }
     } catch (error: any) {
       console.error('Error processing payment:', error);
@@ -405,11 +535,11 @@ export default function BookingConfirmScreen() {
         <View style={styles.headerContent}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => isPaid ? router.replace('/(tabs)/explore') : router.back()}
             activeOpacity={0.7}
           >
             <View style={styles.backButtonInner}>
-              <Ionicons name="arrow-back" size={22} color="#fff" />
+              <Ionicons name={isPaid ? "home" : "arrow-back"} size={22} color="#fff" />
             </View>
           </TouchableOpacity>
           <ThemedText style={styles.headerTitle}>Xác Nhận Đặt Phòng</ThemedText>
@@ -710,9 +840,10 @@ export default function BookingConfirmScreen() {
                 <ThemedText style={styles.guestInfoValue} numberOfLines={1}>
                   {displayBooking.guestInfo?.phone || ''}
                 </ThemedText>
-                <View style={styles.guestInfoDivider} />
+              </View>
+              <View style={styles.guestInfoRow}>
                 <Ionicons name="mail-outline" size={16} color="#64748b" />
-                <ThemedText style={styles.guestInfoValue} numberOfLines={1} ellipsizeMode="tail">
+                <ThemedText style={styles.guestInfoValueEmail} numberOfLines={1} ellipsizeMode="tail">
                   {displayBooking.guestInfo?.email || ''}
                 </ThemedText>
               </View>
@@ -784,13 +915,19 @@ export default function BookingConfirmScreen() {
                   <View style={[styles.paymentMethodIcon, styles.paymentMethodIconPaid]}>
                     {bookingFromAPI?.paymentMethod === 'momo' ? (
                       <Ionicons name="phone-portrait" size={40} color="#A50064" />
+                    ) : bookingFromAPI?.paymentMethod === 'wallet' ? (
+                      <Ionicons name="wallet" size={40} color="#0a7ea4" />
                     ) : (
                       <ThemedText style={[styles.vnpayText, { fontSize: 18, fontWeight: '900' }]}>VNPAY</ThemedText>
                     )}
                   </View>
                   <View style={styles.paymentMethodInfo}>
                     <ThemedText style={styles.paymentMethodName}>
-                      {bookingFromAPI?.paymentMethod === 'momo' ? 'Ví MoMo' : 'VNPay'}
+                      {bookingFromAPI?.paymentMethod === 'momo' 
+                        ? 'Ví MoMo' 
+                        : bookingFromAPI?.paymentMethod === 'wallet'
+                        ? 'Ví trong app'
+                        : 'VNPay'}
                     </ThemedText>
                     <View style={styles.successBadgeContainer}>
                       <View style={styles.successBadge}>
@@ -903,6 +1040,46 @@ export default function BookingConfirmScreen() {
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.paymentMethodCard,
+                  selectedPaymentMethod === 'wallet' && styles.paymentMethodCardSelected,
+                  (isPaid || isCancelled) && styles.paymentMethodCardDisabled,
+                ]}
+                onPress={() => setSelectedPaymentMethod('wallet')}
+                activeOpacity={0.7}
+                disabled={isPaid || isCancelled}
+              >
+                <LinearGradient
+                  colors={selectedPaymentMethod === 'wallet' ? ['#E0F2FE', '#BAE6FD'] : ['#fff', '#fff']}
+                  style={styles.paymentMethodGradient}
+                >
+                  <View style={styles.paymentMethodContent}>
+                    <View style={[styles.paymentMethodIcon, selectedPaymentMethod === 'wallet' && styles.paymentMethodIconSelected]}>
+                      <Ionicons name="wallet" size={36} color="#0a7ea4" />
+                    </View>
+                    <View style={styles.paymentMethodInfo}>
+                      <ThemedText style={styles.paymentMethodName}>Ví trong app</ThemedText>
+                      <ThemedText style={styles.paymentMethodDescription}>
+                        {walletBalance !== null 
+                          ? `Số dư: ${formatPrice(walletBalance)} VNĐ`
+                          : 'Đang tải số dư...'}
+                      </ThemedText>
+                      {walletBalance !== null && walletBalance < displayBooking.totalPrice && (
+                        <ThemedText style={[styles.paymentMethodDescription, { color: '#ef4444', marginTop: 4 }]}>
+                          ⚠️ Số dư không đủ
+                        </ThemedText>
+                      )}
+                    </View>
+                    {selectedPaymentMethod === 'wallet' && (
+                      <View style={styles.checkContainer}>
+                        <Ionicons name="checkmark-circle" size={28} color="#10b981" />
+                      </View>
+                    )}
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
             </>
           )}
         </View>
@@ -963,20 +1140,59 @@ export default function BookingConfirmScreen() {
 
       {/* Fixed Bottom Button */}
       <View style={styles.bottomBar}>
-        <View style={styles.bottomPriceInfo}>
-          <ThemedText style={styles.bottomPriceLabel}>Tổng giá</ThemedText>
-          <ThemedText style={styles.bottomPriceAmount}>
-            {formatPrice(displayBooking.totalPrice)} VNĐ
+        {isPaid ? (
+          <TouchableOpacity
+            style={[styles.homeButton, styles.homeButtonFullWidth]}
+            onPress={() => router.replace('/(tabs)/explore')}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={['#0a7ea4', '#0d8bb8']}
+              style={styles.homeButtonGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <Ionicons name="home" size={20} color="#fff" />
+              <ThemedText style={styles.submitButtonText}>Về Trang Chủ</ThemedText>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : canMakePayment ? (
+          <>
+            {!selectedPaymentMethod ? (
+              <View style={styles.selectPaymentHint}>
+                <Ionicons name="information-circle" size={20} color="#0a7ea4" />
+                <ThemedText style={styles.selectPaymentHintText}>
+                  Vui lòng chọn phương thức thanh toán
           </ThemedText>
         </View>
-        {canMakePayment && (
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[
+                    styles.cancelBookingButton,
+                    isSubmitting && styles.cancelBookingButtonDisabled,
+                  ]}
+                  onPress={handleCancelBooking}
+                  disabled={isSubmitting}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={['#ef4444', '#dc2626']}
+                    style={styles.cancelBookingButtonGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Ionicons name="close-circle" size={18} color="#fff" />
+                    <ThemedText style={styles.cancelBookingButtonText}>Hủy</ThemedText>
+                  </LinearGradient>
+                </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.submitButton,
-              (!selectedPaymentMethod || isSubmitting) && styles.submitButtonDisabled,
+                    isSubmitting && styles.submitButtonDisabled,
             ]}
             onPress={handlePayment}
-            disabled={!selectedPaymentMethod || isSubmitting}
+                  disabled={isSubmitting}
             activeOpacity={0.8}
           >
             {isSubmitting ? (
@@ -985,7 +1201,10 @@ export default function BookingConfirmScreen() {
               <ThemedText style={styles.submitButtonText}>Thanh Toán</ThemedText>
             )}
           </TouchableOpacity>
+              </>
         )}
+          </>
+        ) : null}
       </View>
     </View>
   );
@@ -1240,6 +1459,7 @@ const styles = StyleSheet.create({
   },
   guestInfo: {
     flex: 1,
+    gap: 10,
   },
   guestInfoRow: {
     flexDirection: 'row',
@@ -1251,7 +1471,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#11181C',
     fontWeight: '600',
-    maxWidth: 120,
+    flex: 1,
+  },
+  guestInfoValueEmail: {
+    fontSize: 13,
+    color: '#11181C',
+    fontWeight: '600',
+    flex: 1,
   },
   guestInfoDivider: {
     width: 1,
@@ -1615,21 +1841,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     gap: 12,
     alignItems: 'center',
-  },
-  bottomPriceInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  bottomPriceLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '500',
-  },
-  bottomPriceAmount: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#f97316',
-    letterSpacing: 0.5,
+    justifyContent: 'center',
   },
   submitButton: {
     backgroundColor: '#f97316',
@@ -1638,7 +1850,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: 160,
+    flex: 1,
     shadowColor: '#f97316',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4,
@@ -1873,6 +2085,76 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#10b981',
     letterSpacing: 0.5,
+  },
+  cancelBookingButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+    minWidth: 120,
+  },
+  cancelBookingButtonDisabled: {
+    opacity: 0.5,
+    shadowOpacity: 0,
+  },
+  cancelBookingButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  cancelBookingButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  selectPaymentHint: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#f0f9ff',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#0a7ea4',
+    borderStyle: 'dashed',
+  },
+  selectPaymentHintText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0a7ea4',
+    letterSpacing: 0.3,
+  },
+  homeButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#0a7ea4',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 6,
+    minWidth: 160,
+  },
+  homeButtonFullWidth: {
+    flex: 1,
+    minWidth: 0,
+  },
+  homeButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    gap: 10,
   },
 });
 

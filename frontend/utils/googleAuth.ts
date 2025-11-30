@@ -5,7 +5,7 @@ import Constants from 'expo-constants';
 
 // Google OAuth Configuration
 // Web Client ID (cho web và development)
-const GOOGLE_WEB_CLIENT_ID = '660684573821-9p4bj6umbr4nkivetdv0pq6l24bvjqvr.apps.googleusercontent.com';
+const GOOGLE_WEB_CLIENT_ID = '427675325677-m21ifvu776m66qjntd04omi47q7h5hqh.apps.googleusercontent.com';
 
 // Android Client ID (tạo trong Google Cloud Console với SHA-1 fingerprint)
 // Thay YOUR_ANDROID_CLIENT_ID bằng Android Client ID bạn vừa tạo

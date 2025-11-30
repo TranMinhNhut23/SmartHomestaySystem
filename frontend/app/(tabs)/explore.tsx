@@ -44,6 +44,22 @@ interface Homestay {
   amenities?: string[];
 }
 
+interface WeatherData {
+  current: {
+    temperature: number;
+    weathercode: number;
+    windspeed: number;
+    winddirection: number;
+    time: string;
+  };
+  description: {
+    icon: string;
+    description: string;
+    emoji: string;
+  };
+  locationName?: string;
+}
+
 export default function ExploreScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -51,6 +67,8 @@ export default function ExploreScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [weatherData, setWeatherData] = useState<Record<string, WeatherData>>({});
+  const [loadingWeather, setLoadingWeather] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadHomestays();
@@ -64,6 +82,8 @@ export default function ExploreScreen() {
       });
       if (response.success && response.data) {
         setHomestays(response.data);
+        // Load thời tiết cho tất cả homestays
+        loadWeatherForHomestays(response.data);
       } else {
         throw new Error(response.message || 'Không thể tải danh sách homestay');
       }
@@ -73,6 +93,29 @@ export default function ExploreScreen() {
       setIsLoading(false);
       setRefreshing(false);
     }
+  };
+
+  // Load thời tiết cho các homestays (song song)
+  const loadWeatherForHomestays = async (homestaysList: Homestay[]) => {
+    // Chỉ load thời tiết cho 10 homestay đầu tiên để tránh quá tải
+    const homestaysToLoad = homestaysList.slice(0, 10);
+    
+    homestaysToLoad.forEach(async (homestay) => {
+      try {
+        setLoadingWeather(prev => ({ ...prev, [homestay._id]: true }));
+        const response = await apiService.getHomestayWeather(homestay._id);
+        if (response.success && response.data) {
+          setWeatherData(prev => ({
+            ...prev,
+            [homestay._id]: response.data
+          }));
+        }
+      } catch (error) {
+        console.error(`Error loading weather for homestay ${homestay._id}:`, error);
+      } finally {
+        setLoadingWeather(prev => ({ ...prev, [homestay._id]: false }));
+      }
+    });
   };
 
   const onRefresh = () => {
@@ -234,6 +277,33 @@ export default function ExploreScreen() {
                       {homestay.address.district.name}, {homestay.address.province.name}
                     </ThemedText>
                   </View>
+
+                  {/* Weather Info */}
+                  {weatherData[homestay._id] && (
+                    <View style={styles.weatherRow}>
+                      <View style={styles.weatherIconContainer}>
+                        <ThemedText style={styles.weatherEmoji}>
+                          {weatherData[homestay._id].description.emoji}
+                        </ThemedText>
+                      </View>
+                      <View style={styles.weatherInfo}>
+                        <ThemedText style={styles.weatherTemp}>
+                          {Math.round(weatherData[homestay._id].current.temperature)}°C
+                        </ThemedText>
+                        <ThemedText style={styles.weatherDescription}>
+                          {weatherData[homestay._id].description.description}
+                        </ThemedText>
+                      </View>
+                    </View>
+                  )}
+                  {loadingWeather[homestay._id] && (
+                    <View style={styles.weatherRow}>
+                      <ActivityIndicator size="small" color="#0a7ea4" />
+                      <ThemedText style={styles.weatherLoadingText}>
+                        Đang tải thời tiết...
+                      </ThemedText>
+                    </View>
+                  )}
 
                   {homestay.amenities && homestay.amenities.length > 0 && (
                     <View style={styles.amenitiesRow}>
@@ -490,6 +560,50 @@ const styles = StyleSheet.create({
     color: '#475569',
     flex: 1,
     fontWeight: '600',
+  },
+  weatherRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+  },
+  weatherIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  weatherEmoji: {
+    fontSize: 20,
+  },
+  weatherInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  weatherTemp: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0a7ea4',
+  },
+  weatherDescription: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  weatherLoadingText: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
+    marginLeft: 8,
   },
   amenitiesRow: {
     flexDirection: 'row',

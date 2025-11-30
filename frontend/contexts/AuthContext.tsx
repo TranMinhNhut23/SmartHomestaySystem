@@ -3,11 +3,13 @@ import { apiService } from '@/services/api';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authenticateWithBiometric, checkBiometricAvailability, getBiometricName, canUseBiometric, BiometricType } from '@/services/biometricService';
 
 interface User {
   _id: string;
   username: string;
   email: string;
+  phone?: string | null;
   avatar?: string;
   role?: any;
   roleName?: string;
@@ -19,17 +21,23 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  biometricInfo: BiometricType | null;
   login: (email: string, password: string) => Promise<void>;
   register: (userData: RegisterData) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
+  loginWithBiometric: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  checkBiometric: () => Promise<void>;
+  saveBiometricCredentials: (email: string, password: string) => Promise<void>;
+  clearBiometricCredentials: () => Promise<void>;
 }
 
 interface RegisterData {
   username: string;
   email: string;
   password: string;
+  phone?: string;
   avatar?: string;
   roleName?: 'user' | 'host';
 }
@@ -40,10 +48,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [biometricInfo, setBiometricInfo] = useState<BiometricType | null>(null);
 
   // Load token from storage on mount
   useEffect(() => {
     loadToken();
+    checkBiometric();
   }, []);
 
   // Load user when token is available
@@ -111,11 +121,94 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.success && response.data) {
         await saveToken(response.data.token);
         setUser(response.data.user);
+        // Lưu credentials để dùng cho biometric login (nếu user muốn)
+        // Chỉ lưu khi đăng nhập thành công
       } else {
         throw new Error(response.message || 'Đăng nhập thất bại');
       }
     } catch (error: any) {
       throw new Error(error.message || 'Đăng nhập thất bại');
+    }
+  };
+
+  const loginWithBiometric = async () => {
+    try {
+      // Kiểm tra biometric availability
+      const canUse = await canUseBiometric();
+      if (!canUse) {
+        throw new Error('Thiết bị không hỗ trợ hoặc chưa đăng ký vân tay/face ID');
+      }
+
+      // Xác thực bằng biometric
+      const authResult = await authenticateWithBiometric('Xác thực để đăng nhập');
+      
+      if (!authResult.success) {
+        throw new Error(authResult.error || 'Xác thực thất bại');
+      }
+
+      // Lấy credentials đã lưu
+      let savedEmail: string | null = null;
+      let savedPassword: string | null = null;
+
+      if (Platform.OS === 'web') {
+        savedEmail = await AsyncStorage.getItem('biometric_email');
+        savedPassword = await AsyncStorage.getItem('biometric_password');
+      } else {
+        savedEmail = await SecureStore.getItemAsync('biometric_email');
+        savedPassword = await SecureStore.getItemAsync('biometric_password');
+      }
+
+      if (!savedEmail || !savedPassword) {
+        throw new Error('Chưa lưu thông tin đăng nhập. Vui lòng đăng nhập bằng email/password trước.');
+      }
+
+      // Đăng nhập với credentials đã lưu
+      await login(savedEmail, savedPassword);
+    } catch (error: any) {
+      throw new Error(error.message || 'Đăng nhập bằng vân tay thất bại');
+    }
+  };
+
+  const saveBiometricCredentials = async (email: string, password: string) => {
+    try {
+      if (Platform.OS === 'web') {
+        await AsyncStorage.setItem('biometric_email', email);
+        await AsyncStorage.setItem('biometric_password', password);
+      } else {
+        await SecureStore.setItemAsync('biometric_email', email);
+        await SecureStore.setItemAsync('biometric_password', password);
+      }
+    } catch (error) {
+      console.error('Error saving biometric credentials:', error);
+      throw new Error('Không thể lưu thông tin đăng nhập');
+    }
+  };
+
+  const clearBiometricCredentials = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        await AsyncStorage.removeItem('biometric_email');
+        await AsyncStorage.removeItem('biometric_password');
+      } else {
+        await SecureStore.deleteItemAsync('biometric_email');
+        await SecureStore.deleteItemAsync('biometric_password');
+      }
+    } catch (error) {
+      console.error('Error clearing biometric credentials:', error);
+    }
+  };
+
+  const checkBiometric = async () => {
+    try {
+      const info = await checkBiometricAvailability();
+      setBiometricInfo(info);
+    } catch (error) {
+      console.error('Error checking biometric:', error);
+      setBiometricInfo({
+        available: false,
+        type: 'none',
+        error: 'Lỗi kiểm tra xác thực sinh trắc học'
+      });
     }
   };
 
@@ -160,6 +253,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await SecureStore.deleteItemAsync('auth_token');
       }
       apiService.setToken(null);
+      // Không xóa biometric credentials khi logout (để user có thể đăng nhập lại bằng fingerprint)
+      // Nếu muốn xóa, uncomment dòng dưới:
+      // await clearBiometricCredentials();
     } catch (error) {
       console.error('Error removing token:', error);
     }
@@ -189,11 +285,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         isLoading,
         isAuthenticated: !!user && !!token,
+        biometricInfo,
         login,
         register,
         loginWithGoogle,
+        loginWithBiometric,
         logout,
         refreshUser,
+        checkBiometric,
+        saveBiometricCredentials,
+        clearBiometricCredentials,
       }}
     >
       {children}

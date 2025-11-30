@@ -18,6 +18,12 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     match: [/^\S+@\S+\.\S+$/, 'Email không hợp lệ']
   },
+  phone: {
+    type: String,
+    trim: true,
+    match: [/^[0-9]{10,11}$/, 'Số điện thoại không hợp lệ (10-11 chữ số)'],
+    default: null
+  },
   password: {
     type: String,
     required: function() {
@@ -48,6 +54,16 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['user', 'host', 'admin'],
     default: 'user'
+  },
+  // Ví tiền của user
+  wallet: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Wallet',
+    default: null
+  },
+  isActive: {
+    type: Boolean,
+    default: true
   },
   createdAt: {
     type: Date,
@@ -88,4 +104,3 @@ userSchema.methods.toJSON = function() {
 const User = mongoose.model('User', userSchema);
 
 module.exports = User;
-

@@ -90,7 +90,14 @@ export default function BookingScreen() {
   const [numberOfGuests, setNumberOfGuests] = useState(1);
   const [guestInfo, setGuestInfo] = useState({
     fullName: user?.username || '',
-    phone: '',
+    phone: user?.phone || '',
+    email: user?.email || '',
+    specialRequests: '',
+  });
+  const [isEditingGuestInfo, setIsEditingGuestInfo] = useState(false);
+  const [originalGuestInfo, setOriginalGuestInfo] = useState({
+    fullName: user?.username || '',
+    phone: user?.phone || '',
     email: user?.email || '',
     specialRequests: '',
   });
@@ -135,7 +142,41 @@ export default function BookingScreen() {
     if (homestayId) {
       loadHomestayData();
     }
+
+    // Load thông tin user đầy đủ
+    loadUserInfo();
   }, [homestayId, isAuthenticated]);
+
+  // Load thông tin user đầy đủ từ API
+  const loadUserInfo = async () => {
+    if (!isAuthenticated) return;
+    
+    try {
+      const response = await apiService.getCurrentUser();
+      if (response.success && response.data) {
+        const userData = response.data;
+        const updatedGuestInfo = {
+          fullName: userData.username || '',
+          phone: userData.phone || '',
+          email: userData.email || '',
+          specialRequests: guestInfo.specialRequests || '', // Giữ lại specialRequests nếu đã có
+        };
+        setGuestInfo(updatedGuestInfo);
+        setOriginalGuestInfo(updatedGuestInfo);
+      }
+    } catch (error) {
+      console.error('Error loading user info:', error);
+      // Nếu lỗi, vẫn dùng thông tin từ user context
+      const fallbackGuestInfo = {
+        fullName: user?.username || '',
+        phone: user?.phone || '',
+        email: user?.email || '',
+        specialRequests: guestInfo.specialRequests || '',
+      };
+      setGuestInfo(fallbackGuestInfo);
+      setOriginalGuestInfo(fallbackGuestInfo);
+    }
+  };
 
   // Set checkIn and checkOut from params if provided
   useEffect(() => {
@@ -1381,52 +1422,134 @@ export default function BookingScreen() {
           <View style={styles.sectionHeader}>
             <Ionicons name="person-outline" size={24} color="#0a7ea4" />
             <ThemedText style={styles.sectionTitle}>Thông Tin Khách Hàng</ThemedText>
+            {!isEditingGuestInfo && (
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => setIsEditingGuestInfo(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="create-outline" size={18} color="#0a7ea4" />
+                <ThemedText style={styles.editButtonText}>Chỉnh sửa</ThemedText>
+              </TouchableOpacity>
+            )}
+            {isEditingGuestInfo && (
+              <View style={styles.editActions}>
+                <TouchableOpacity
+                  style={styles.cancelEditButton}
+                  onPress={() => {
+                    setGuestInfo(originalGuestInfo);
+                    setIsEditingGuestInfo(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <ThemedText style={styles.cancelEditButtonText}>Hủy</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.saveEditButton}
+                  onPress={() => {
+                    setOriginalGuestInfo(guestInfo);
+                    setIsEditingGuestInfo(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <ThemedText style={styles.saveEditButtonText}>Lưu</ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
-          <View style={styles.formGroup}>
-            <ThemedText style={styles.label}>Họ và tên *</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="Nhập họ và tên"
-              placeholderTextColor="#94a3b8"
-              value={guestInfo.fullName}
-              onChangeText={(text) => setGuestInfo({ ...guestInfo, fullName: text })}
-            />
-          </View>
-          <View style={styles.formGroup}>
-            <ThemedText style={styles.label}>Số điện thoại *</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="Nhập số điện thoại"
-              placeholderTextColor="#94a3b8"
-              value={guestInfo.phone}
-              onChangeText={(text) => setGuestInfo({ ...guestInfo, phone: text })}
-              keyboardType="phone-pad"
-            />
-          </View>
-          <View style={styles.formGroup}>
-            <ThemedText style={styles.label}>Email *</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="Nhập email"
-              placeholderTextColor="#94a3b8"
-              value={guestInfo.email}
-              onChangeText={(text) => setGuestInfo({ ...guestInfo, email: text })}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-          <View style={styles.formGroup}>
-            <ThemedText style={styles.label}>Yêu cầu đặc biệt</ThemedText>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Nhập yêu cầu đặc biệt (nếu có)"
-              placeholderTextColor="#94a3b8"
-              value={guestInfo.specialRequests}
-              onChangeText={(text) => setGuestInfo({ ...guestInfo, specialRequests: text })}
-              multiline
-              numberOfLines={4}
-            />
-          </View>
+
+          {!isEditingGuestInfo ? (
+            // Chế độ xem (read-only)
+            <View style={styles.guestInfoView}>
+              <View style={styles.guestInfoRow}>
+                <View style={styles.guestInfoIconContainer}>
+                  <Ionicons name="person" size={20} color="#0a7ea4" />
+                </View>
+                <View style={styles.guestInfoContent}>
+                  <ThemedText style={styles.guestInfoLabel}>Họ và tên</ThemedText>
+                  <ThemedText style={styles.guestInfoValue}>{guestInfo.fullName || 'Chưa có'}</ThemedText>
+                </View>
+              </View>
+              <View style={styles.guestInfoRow}>
+                <View style={styles.guestInfoIconContainer}>
+                  <Ionicons name="call" size={20} color="#0a7ea4" />
+                </View>
+                <View style={styles.guestInfoContent}>
+                  <ThemedText style={styles.guestInfoLabel}>Số điện thoại</ThemedText>
+                  <ThemedText style={styles.guestInfoValue}>{guestInfo.phone || 'Chưa có'}</ThemedText>
+                </View>
+              </View>
+              <View style={styles.guestInfoRow}>
+                <View style={styles.guestInfoIconContainer}>
+                  <Ionicons name="mail" size={20} color="#0a7ea4" />
+                </View>
+                <View style={styles.guestInfoContent}>
+                  <ThemedText style={styles.guestInfoLabel}>Email</ThemedText>
+                  <ThemedText style={styles.guestInfoValue}>{guestInfo.email || 'Chưa có'}</ThemedText>
+                </View>
+              </View>
+              {guestInfo.specialRequests && (
+                <View style={styles.guestInfoRow}>
+                  <View style={styles.guestInfoIconContainer}>
+                    <Ionicons name="document-text" size={20} color="#0a7ea4" />
+                  </View>
+                  <View style={styles.guestInfoContent}>
+                    <ThemedText style={styles.guestInfoLabel}>Yêu cầu đặc biệt</ThemedText>
+                    <ThemedText style={styles.guestInfoValue}>{guestInfo.specialRequests}</ThemedText>
+                  </View>
+                </View>
+              )}
+            </View>
+          ) : (
+            // Chế độ chỉnh sửa
+            <>
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>Họ và tên *</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nhập họ và tên"
+                  placeholderTextColor="#94a3b8"
+                  value={guestInfo.fullName}
+                  onChangeText={(text) => setGuestInfo({ ...guestInfo, fullName: text })}
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>Số điện thoại *</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nhập số điện thoại"
+                  placeholderTextColor="#94a3b8"
+                  value={guestInfo.phone}
+                  onChangeText={(text) => setGuestInfo({ ...guestInfo, phone: text })}
+                  keyboardType="phone-pad"
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>Email *</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nhập email"
+                  placeholderTextColor="#94a3b8"
+                  value={guestInfo.email}
+                  onChangeText={(text) => setGuestInfo({ ...guestInfo, email: text })}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>Yêu cầu đặc biệt</ThemedText>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Nhập yêu cầu đặc biệt (nếu có)"
+                  placeholderTextColor="#94a3b8"
+                  value={guestInfo.specialRequests}
+                  onChangeText={(text) => setGuestInfo({ ...guestInfo, specialRequests: text })}
+                  multiline
+                  numberOfLines={4}
+                />
+              </View>
+            </>
+          )}
         </View>
 
         {/* Coupon Section */}
@@ -2927,6 +3050,87 @@ const styles = StyleSheet.create({
   },
   couponListItemArrow: {
     marginLeft: 8,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#f0f9ff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#0a7ea4',
+  },
+  editButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0a7ea4',
+  },
+  editActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cancelEditButton: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  cancelEditButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  saveEditButton: {
+    backgroundColor: '#0a7ea4',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  saveEditButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  guestInfoView: {
+    gap: 16,
+  },
+  guestInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  guestInfoIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0f9ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  guestInfoContent: {
+    flex: 1,
+    gap: 4,
+  },
+  guestInfoLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  guestInfoValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#11181C',
   },
 });
 

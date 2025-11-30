@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Image, StyleSheet } from 'react-native';
+import { View, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { getAvatarUrl } from '@/services/api';
 import { AdminStatsSection } from './AdminStatsSection';
 import { AdminQuickActionsSection } from './AdminQuickActionsSection';
@@ -47,8 +48,19 @@ export function AdminDashboardSection({ user }: AdminDashboardSectionProps) {
               </View>
             </View>
             <View style={styles.userInfo}>
-              <ThemedText style={styles.welcomeText}>Xin chào,</ThemedText>
-              <ThemedText style={styles.username}>{user.username}</ThemedText>
+              <View style={styles.userInfoHeader}>
+                <View style={styles.userInfoText}>
+                  <ThemedText style={styles.welcomeText}>Xin chào,</ThemedText>
+                  <ThemedText style={styles.username}>{user.username}</ThemedText>
+                </View>
+                <TouchableOpacity
+                  style={styles.editButton}
+                  onPress={() => router.push('/edit-profile' as any)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="create-outline" size={18} color="#fff" />
+                </TouchableOpacity>
+              </View>
               <View style={styles.roleBadge}>
                 <Ionicons name="shield" size={14} color="#fbbf24" />
                 <ThemedText style={styles.roleText}>Quản Trị Viên</ThemedText>
@@ -124,6 +136,24 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
+  },
+  userInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  userInfoText: {
+    flex: 1,
+  },
+  editButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
   },
   welcomeText: {
     fontSize: 14,

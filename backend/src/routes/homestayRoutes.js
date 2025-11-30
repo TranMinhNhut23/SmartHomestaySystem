@@ -68,6 +68,12 @@ router.put(
   homestayController.rejectHomestay.bind(homestayController)
 );
 
+// Lấy thời tiết cho homestay (không cần đăng nhập) - ĐẶT TRƯỚC route /:id
+router.get(
+  '/:id/weather',
+  homestayController.getHomestayWeather.bind(homestayController)
+);
+
 // Lấy thông tin chi tiết homestay (không cần đăng nhập) - ĐẶT CUỐI CÙNG
 router.get(
   '/:id',

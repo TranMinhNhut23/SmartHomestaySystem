@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Modal,
+  Animated,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -17,9 +18,11 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/AuthContext';
-import { apiService, getHomestayImageUrl } from '@/services/api';
+import { apiService, getHomestayImageUrl, getReviewImageUrl } from '@/services/api';
 import { ROOM_TYPES, AMENITIES } from '@/types/homestay';
 import { normalizeAmenitiesFromDB } from '@/utils/homestayValidation';
+import { ChatModal } from '@/components/ChatModal';
+import { AIChatModal } from '@/components/AIChatModal';
 
 const { width } = Dimensions.get('window');
 
@@ -78,12 +81,34 @@ export default function HomestayDetailScreen() {
   const [showCheckOutPicker, setShowCheckOutPicker] = useState(false);
   const [tempCheckIn, setTempCheckIn] = useState<Date | null>(null);
   const [tempCheckOut, setTempCheckOut] = useState<Date | null>(null);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [showAIChatModal, setShowAIChatModal] = useState(false);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+  const [showReviewsModal, setShowReviewsModal] = useState(false);
+  const [roomsSectionY, setRoomsSectionY] = useState(0);
+  const [highlightRooms, setHighlightRooms] = useState(false);
+  const [showFloatingButton, setShowFloatingButton] = useState(false);
+  const [weatherData, setWeatherData] = useState<any>(null);
+  const [loadingWeather, setLoadingWeather] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const highlightAnim = useRef(new Animated.Value(0)).current;
+  const floatingButtonAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (id) {
       loadHomestay();
+      loadReviews();
+      loadWeather();
     }
   }, [id]);
+
+  // Reload weather khi homestay thay đổi
+  useEffect(() => {
+    if (homestay) {
+      loadWeather();
+    }
+  }, [homestay?._id]);
 
   const loadHomestay = async () => {
     try {
@@ -106,6 +131,45 @@ export default function HomestayDetailScreen() {
       ]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadReviews = async () => {
+    if (!id) return;
+    try {
+      setIsLoadingReviews(true);
+      const response = await apiService.getHomestayReviews(id, {
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+      });
+      if (response.success && response.data) {
+        const reviewsData = Array.isArray(response.data) 
+          ? response.data 
+          : (response.data.reviews || response.data.data || []);
+        setReviews(reviewsData);
+      }
+    } catch (error: any) {
+      console.error('Error loading reviews:', error);
+      // Không hiển thị alert, chỉ log lỗi
+    } finally {
+      setIsLoadingReviews(false);
+    }
+  };
+
+  const loadWeather = async () => {
+    if (!id) return;
+    try {
+      setLoadingWeather(true);
+      const response = await apiService.getHomestayWeather(id);
+      if (response.success && response.data) {
+        setWeatherData(response.data);
+      }
+    } catch (error: any) {
+      console.error('Error loading weather:', error);
+      // Không hiển thị alert, chỉ log lỗi
+    } finally {
+      setLoadingWeather(false);
     }
   };
 
@@ -521,6 +585,63 @@ export default function HomestayDetailScreen() {
     (typeof homestay.host === 'string' && user._id === homestay.host)
   );
 
+  // Tính hostId để truyền vào ChatModal
+  const getHostId = (): string | null => {
+    if (!homestay?.host) return null;
+    if (typeof homestay.host === 'object') {
+      return homestay.host._id || null;
+    }
+    return homestay.host;
+  };
+
+  // Tính toán rating trung bình từ reviews
+  const calculateAverageRating = () => {
+    if (!reviews || reviews.length === 0) return { average: 0, count: 0 };
+    const totalRating = reviews.reduce((sum, review) => sum + (review.rating || 0), 0);
+    const average = totalRating / reviews.length;
+    return { average: Math.round(average * 10) / 10, count: reviews.length };
+  };
+
+  const { average: avgRating, count: reviewCount } = calculateAverageRating();
+
+  // Scroll to rooms section with highlight
+  const scrollToRooms = () => {
+    if (scrollViewRef.current && roomsSectionY > 0) {
+      scrollViewRef.current.scrollTo({ y: roomsSectionY - 20, animated: true });
+      
+      // Trigger highlight animation
+      setHighlightRooms(true);
+      Animated.sequence([
+        Animated.timing(highlightAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+        Animated.timing(highlightAnim, {
+          toValue: 0,
+          duration: 300,
+          delay: 1500,
+          useNativeDriver: false,
+        }),
+      ]).start(() => setHighlightRooms(false));
+    }
+  };
+
+  // Handle scroll to show/hide floating button
+  const handleScroll = (event: any) => {
+    const scrollY = event.nativeEvent.contentOffset.y;
+    const shouldShow = scrollY > 300; // Show after scrolling 300px
+    
+    if (shouldShow !== showFloatingButton) {
+      setShowFloatingButton(shouldShow);
+      Animated.timing(floatingButtonAnim, {
+        toValue: shouldShow ? 1 : 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  };
+
   if (isLoading) {
     return (
       <View style={[styles.container, styles.loadingContainer, { backgroundColor: isDark ? '#151718' : '#f5f5f5' }]}>
@@ -537,9 +658,12 @@ export default function HomestayDetailScreen() {
   return (
     <View style={[styles.container, { backgroundColor: '#fff' }]}>
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       >
         {/* Hero Image with Overlay */}
         {homestay.images && homestay.images.length > 0 && (
@@ -563,6 +687,28 @@ export default function HomestayDetailScreen() {
               </TouchableOpacity>
               
               <View style={styles.imageHeaderRight}>
+                {!isOwner && user && (
+                  <TouchableOpacity
+                    style={styles.imageHeaderButton}
+                    onPress={() => setShowAIChatModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.imageHeaderButtonInner}>
+                      <Ionicons name="sparkles" size={22} color="#fff" />
+                    </View>
+                  </TouchableOpacity>
+                )}
+                {!isOwner && user && homestay.host && (
+                  <TouchableOpacity
+                    style={styles.imageHeaderButton}
+                    onPress={() => setShowChatModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.imageHeaderButtonInner}>
+                      <Ionicons name="chatbubble-ellipses" size={22} color="#fff" />
+                    </View>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   style={styles.imageHeaderButton}
                   activeOpacity={0.7}
@@ -630,11 +776,14 @@ export default function HomestayDetailScreen() {
                   <View style={styles.imageOverlayBadge}>
                     <ThemedText style={styles.imageOverlayBadgeText}>Homestay</ThemedText>
                   </View>
-                  <View style={styles.ratingStars}>
-                    {[1, 2, 3].map((star) => (
-                      <Ionicons key={star} name="star" size={16} color="#fbbf24" />
-                    ))}
+                  {avgRating > 0 && (
+                    <View style={styles.imageOverlayRating}>
+                      <Ionicons name="star" size={16} color="#fbbf24" />
+                      <ThemedText style={styles.imageOverlayRatingText}>
+                        {avgRating}/5
+                      </ThemedText>
                   </View>
+                  )}
                 </View>
               </View>
             </LinearGradient>
@@ -644,14 +793,26 @@ export default function HomestayDetailScreen() {
         {/* Rating and Location Card */}
         <View style={styles.infoCard}>
           <View style={styles.infoCardRow}>
-            <View style={styles.ratingSection}>
-              <ThemedText style={styles.ratingNumber}>6.3/10</ThemedText>
-              <ThemedText style={styles.ratingLabel}>Hài lòng</ThemedText>
-              <ThemedText style={styles.ratingCount}>2 đánh giá</ThemedText>
-              <TouchableOpacity style={styles.ratingArrow}>
-                <Ionicons name="chevron-forward" size={20} color="#0a7ea4" />
-              </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.ratingSection}
+              onPress={() => reviewCount > 0 && setShowReviewsModal(true)}
+              activeOpacity={reviewCount > 0 ? 0.7 : 1}
+            >
+              <ThemedText style={styles.ratingNumber}>
+                {avgRating > 0 ? `${avgRating}/5` : 'Chưa có'}
+              </ThemedText>
+              <ThemedText style={styles.ratingLabel}>
+                {avgRating >= 4 ? 'Rất tốt' : avgRating >= 3 ? 'Tốt' : avgRating >= 2 ? 'Trung bình' : avgRating > 0 ? 'Cần cải thiện' : 'Chưa có đánh giá'}
+              </ThemedText>
+              <ThemedText style={styles.ratingCount}>
+                {reviewCount} {reviewCount === 1 ? 'đánh giá' : 'đánh giá'}
+              </ThemedText>
+              {reviewCount > 0 && (
+                <View style={styles.ratingArrow}>
+                  <Ionicons name="chevron-forward" size={20} color="#0a7ea4" />
             </View>
+              )}
+            </TouchableOpacity>
             <View style={styles.locationSection}>
               <ThemedText style={styles.locationText}>
                 {homestay.address.district.name}, {homestay.address.province.name}
@@ -670,6 +831,147 @@ export default function HomestayDetailScreen() {
             </View>
           </View>
         </View>
+
+        {/* Weather Card */}
+        {weatherData && (
+          <View style={styles.weatherCard}>
+            <View style={styles.weatherCardHeader}>
+              <View style={styles.weatherIconContainer}>
+                <ThemedText style={styles.weatherEmoji}>
+                  {weatherData.description?.emoji || '🌤️'}
+                </ThemedText>
+              </View>
+              <View style={styles.weatherHeaderInfo}>
+                <ThemedText style={styles.weatherCardTitle}>Thời tiết</ThemedText>
+                {weatherData.locationName && (
+                  <ThemedText style={styles.weatherLocationName}>
+                    {weatherData.locationName}
+                  </ThemedText>
+                )}
+              </View>
+            </View>
+            <View style={styles.weatherCardContent}>
+              <View style={styles.weatherMainInfo}>
+                <ThemedText style={styles.weatherTemperature}>
+                  {Math.round(weatherData.current.temperature)}°
+                </ThemedText>
+                <ThemedText style={styles.weatherDescription}>
+                  {weatherData.description?.description || 'Đang cập nhật'}
+                </ThemedText>
+              </View>
+              <View style={styles.weatherDetails}>
+                <View style={styles.weatherDetailItem}>
+                  <Ionicons name="water" size={18} color="#0a7ea4" />
+                  <View style={styles.weatherDetailInfo}>
+                    <ThemedText style={styles.weatherDetailLabel}>Gió</ThemedText>
+                    <ThemedText style={styles.weatherDetailValue}>
+                      {Math.round(weatherData.current.windspeed)} km/h
+                    </ThemedText>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* Forecast 7 ngày */}
+            {weatherData.forecast && weatherData.forecast.length > 0 && (
+              <View style={styles.weatherForecastSection}>
+                <View style={styles.weatherForecastHeader}>
+                  <Ionicons name="calendar" size={18} color="#0a7ea4" />
+                  <ThemedText style={styles.weatherForecastTitle}>
+                    Dự báo 7 ngày tới
+                  </ThemedText>
+                </View>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.weatherForecastScroll}
+                  contentContainerStyle={styles.weatherForecastContent}
+                >
+                  {weatherData.forecast.map((day: any, index: number) => {
+                    const date = new Date(day.date);
+                    const dayNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+                    const dayName = dayNames[date.getDay()];
+                    const dayNumber = date.getDate();
+                    const month = date.getMonth() + 1;
+                    const isToday = index === 0;
+                    
+                    // Lấy emoji từ weathercode (giống logic trong backend)
+                    const getWeatherEmoji = (code: number | null) => {
+                      if (code === null || code === undefined) return '🌤️';
+                      if (code === 0) return '☀️';
+                      if (code >= 1 && code <= 3) return '⛅';
+                      if (code === 45 || code === 48) return '🌫️';
+                      if (code >= 51 && code <= 55) return '🌦️';
+                      if (code >= 56 && code <= 57) return '🌨️';
+                      if (code >= 61 && code <= 65) return '🌧️';
+                      if (code >= 66 && code <= 67) return '🌨️';
+                      if (code >= 71 && code <= 75) return '❄️';
+                      if (code === 77) return '❄️';
+                      if (code >= 80 && code <= 82) return '⛈️';
+                      if (code >= 85 && code <= 86) return '❄️';
+                      if (code === 95) return '⛈️';
+                      if (code >= 96 && code <= 99) return '⛈️';
+                      return '🌤️';
+                    };
+
+                    return (
+                      <View 
+                        key={index} 
+                        style={[
+                          styles.weatherForecastDay,
+                          isToday && styles.weatherForecastDayToday
+                        ]}
+                      >
+                        <ThemedText style={[
+                          styles.weatherForecastDayName,
+                          isToday && styles.weatherForecastDayNameToday
+                        ]}>
+                          {isToday ? 'Hôm nay' : dayName}
+                        </ThemedText>
+                        <ThemedText style={styles.weatherForecastDayDate}>
+                          {dayNumber}/{month}
+                        </ThemedText>
+                        <ThemedText style={styles.weatherForecastEmoji}>
+                          {getWeatherEmoji(day.weathercode)}
+                        </ThemedText>
+                        <View style={styles.weatherForecastTemps}>
+                          {day.temperatureMax !== null && (
+                            <ThemedText style={styles.weatherForecastTempMax}>
+                              {Math.round(day.temperatureMax)}°
+                            </ThemedText>
+                          )}
+                          {day.temperatureMin !== null && (
+                            <ThemedText style={styles.weatherForecastTempMin}>
+                              {Math.round(day.temperatureMin)}°
+                            </ThemedText>
+                          )}
+                        </View>
+                        {day.precipitation > 0 && (
+                          <View style={styles.weatherForecastRain}>
+                            <Ionicons name="water" size={12} color="#0a7ea4" />
+                            <ThemedText style={styles.weatherForecastRainText}>
+                              {day.precipitation.toFixed(1)}mm
+                            </ThemedText>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        )}
+        {loadingWeather && (
+          <View style={styles.weatherCard}>
+            <View style={styles.weatherLoadingContainer}>
+              <ActivityIndicator size="small" color="#0a7ea4" />
+              <ThemedText style={styles.weatherLoadingText}>
+                Đang tải thời tiết...
+              </ThemedText>
+            </View>
+          </View>
+        )}
 
         {/* Amenities Quick View */}
         {homestay.amenities && Array.isArray(homestay.amenities) && homestay.amenities.length > 0 && (
@@ -701,6 +1003,29 @@ export default function HomestayDetailScreen() {
           </ThemedText>
         </View>
 
+        {/* Host Info */}
+        {homestay.host && (
+          <View style={styles.descriptionCard}>
+            <View style={styles.descriptionHeader}>
+              <View style={styles.hostHeaderContent}>
+                <Ionicons name="person-circle" size={24} color="#0a7ea4" />
+                <ThemedText style={styles.descriptionTitle}>Chủ nhà</ThemedText>
+              </View>
+            </View>
+            <View style={styles.hostInfoContent}>
+              <View style={styles.hostAvatar}>
+                <Ionicons name="person" size={32} color="#0a7ea4" />
+              </View>
+              <View style={styles.hostDetails}>
+                <ThemedText style={styles.hostName}>
+                  {typeof homestay.host === 'object' ? homestay.host.username : 'Chủ nhà'}
+                </ThemedText>
+                <ThemedText style={styles.hostLabel}>Chủ homestay</ThemedText>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Address */}
         {homestay.address && (
           <View style={styles.descriptionCard}>
@@ -725,7 +1050,27 @@ export default function HomestayDetailScreen() {
 
         {/* Rooms by Type */}
         {homestay.rooms && homestay.rooms.length > 0 && (
-          <View style={[styles.section, styles.roomsSection]}>
+          <Animated.View 
+            style={[
+              styles.section, 
+              styles.roomsSection,
+              highlightRooms && {
+                backgroundColor: highlightAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['#fff', '#e0f2fe']
+                }),
+                shadowColor: '#0a7ea4',
+                shadowOpacity: highlightAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.08, 0.3]
+                }),
+              }
+            ]}
+            onLayout={(event) => {
+              const layout = event.nativeEvent.layout;
+              setRoomsSectionY(layout.y);
+            }}
+          >
             <View style={styles.sectionHeader}>
               <Ionicons name="bed" size={20} color="#0a7ea4" />
               <ThemedText style={styles.sectionTitle}>Phòng</ThemedText>
@@ -771,9 +1116,164 @@ export default function HomestayDetailScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          </View>
+          </Animated.View>
         )}
 
+        {/* Reviews Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="star" size={20} color="#0a7ea4" />
+            <ThemedText style={styles.sectionTitle}>Đánh giá ({reviewCount})</ThemedText>
+          </View>
+          
+          {isLoadingReviews ? (
+            <View style={styles.reviewsLoading}>
+              <ActivityIndicator size="small" color="#0a7ea4" />
+              <ThemedText style={styles.reviewsLoadingText}>Đang tải đánh giá...</ThemedText>
+            </View>
+          ) : reviews.length > 0 ? (
+            <View style={styles.reviewsList}>
+              {reviews.slice(0, 5).map((review) => (
+                <View key={review._id} style={styles.reviewCard}>
+                  <View style={styles.reviewHeader}>
+                    <View style={styles.reviewUserInfo}>
+                      <View style={styles.reviewAvatar}>
+                        <Ionicons name="person" size={20} color="#0a7ea4" />
+                      </View>
+                      <View style={styles.reviewUserDetails}>
+                        <ThemedText style={styles.reviewUserName}>
+                          {review.user?.username || review.user?.email || 'Người dùng'}
+                        </ThemedText>
+                        <ThemedText style={styles.reviewDate}>
+                          {formatDate(review.createdAt)}
+                        </ThemedText>
+                      </View>
+                    </View>
+                    <View style={styles.reviewRating}>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Ionicons
+                          key={star}
+                          name={star <= review.rating ? 'star' : 'star-outline'}
+                          size={16}
+                          color="#fbbf24"
+                        />
+                      ))}
+                    </View>
+                  </View>
+                  
+                  {review.comment && (
+                    <ThemedText style={styles.reviewComment} numberOfLines={3}>
+                      {review.comment}
+                    </ThemedText>
+                  )}
+                  
+                  {review.images && review.images.length > 0 && (
+                    <ScrollView 
+                      horizontal 
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.reviewImages}
+                    >
+                      {review.images.slice(0, 5).map((img: string, index: number) => {
+                        const imageUrl = img.startsWith('http') || img.startsWith('data:image')
+                          ? img
+                          : getReviewImageUrl(img) || img;
+                        return (
+                          <Image
+                            key={index}
+                            source={{ uri: imageUrl }}
+                            style={styles.reviewImage}
+                            resizeMode="cover"
+                          />
+                        );
+                      })}
+                    </ScrollView>
+                  )}
+                  
+                  {review.details && (
+                    <View style={styles.reviewDetails}>
+                      {review.details.cleanliness && (
+                        <View style={styles.reviewDetailItem}>
+                          <ThemedText style={styles.reviewDetailLabel}>Vệ sinh:</ThemedText>
+                          <View style={styles.reviewDetailStars}>
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Ionicons
+                                key={star}
+                                name={star <= review.details.cleanliness ? 'star' : 'star-outline'}
+                                size={12}
+                                color="#fbbf24"
+                              />
+                            ))}
+                          </View>
+                        </View>
+                      )}
+                      {review.details.location && (
+                        <View style={styles.reviewDetailItem}>
+                          <ThemedText style={styles.reviewDetailLabel}>Vị trí:</ThemedText>
+                          <View style={styles.reviewDetailStars}>
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Ionicons
+                                key={star}
+                                name={star <= review.details.location ? 'star' : 'star-outline'}
+                                size={12}
+                                color="#fbbf24"
+                              />
+                            ))}
+                          </View>
+                        </View>
+                      )}
+                      {review.details.service && (
+                        <View style={styles.reviewDetailItem}>
+                          <ThemedText style={styles.reviewDetailLabel}>Dịch vụ:</ThemedText>
+                          <View style={styles.reviewDetailStars}>
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Ionicons
+                                key={star}
+                                name={star <= review.details.service ? 'star' : 'star-outline'}
+                                size={12}
+                                color="#fbbf24"
+                              />
+                            ))}
+                          </View>
+                        </View>
+                      )}
+                      {review.details.value && (
+                        <View style={styles.reviewDetailItem}>
+                          <ThemedText style={styles.reviewDetailLabel}>Giá trị:</ThemedText>
+                          <View style={styles.reviewDetailStars}>
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Ionicons
+                                key={star}
+                                name={star <= review.details.value ? 'star' : 'star-outline'}
+                                size={12}
+                                color="#fbbf24"
+                              />
+                            ))}
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              ))}
+              
+              {reviews.length > 5 && (
+                <TouchableOpacity style={styles.viewMoreReviews}>
+                  <ThemedText style={styles.viewMoreReviewsText}>
+                    Xem thêm {reviews.length - 5} đánh giá
+                  </ThemedText>
+                  <Ionicons name="chevron-forward" size={20} color="#0a7ea4" />
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <View style={styles.reviewsEmpty}>
+              <Ionicons name="star-outline" size={48} color="#94a3b8" />
+              <ThemedText style={styles.reviewsEmptyText}>
+                Chưa có đánh giá nào
+              </ThemedText>
+            </View>
+          )}
+        </View>
 
         {/* Google Maps */}
         {homestay.googleMapsEmbed && (
@@ -802,21 +1302,45 @@ export default function HomestayDetailScreen() {
             </TouchableOpacity>
           </View>
         )}
-
-        {/* Host Info */}
-        {homestay.host && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="person" size={20} color="#0a7ea4" />
-              <ThemedText style={styles.sectionTitle}>Chủ nhà</ThemedText>
-            </View>
-            <ThemedText style={styles.hostText}>
-              {typeof homestay.host === 'object' ? homestay.host.username : 'Chủ nhà'}
-            </ThemedText>
-          </View>
-        )}
       </ScrollView>
 
+      {/* Floating Book Button */}
+      {homestay.rooms && homestay.rooms.length > 0 && (
+        <Animated.View
+          style={[
+            styles.floatingButtonContainer,
+            {
+              opacity: floatingButtonAnim,
+              transform: [
+                {
+                  translateY: floatingButtonAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [100, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+          pointerEvents={showFloatingButton ? 'auto' : 'none'}
+        >
+          <TouchableOpacity
+            style={styles.floatingButton}
+            activeOpacity={0.8}
+            onPress={scrollToRooms}
+          >
+            <LinearGradient
+              colors={['#0a7ea4', '#0d8bb8']}
+              style={styles.floatingButtonGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <Ionicons name="bed" size={22} color="#fff" />
+              <ThemedText style={styles.floatingButtonText}>Chọn Phòng</ThemedText>
+              <Ionicons name="arrow-down" size={20} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
+        )}
 
       {/* Amenities Modal */}
       <Modal
@@ -1098,6 +1622,30 @@ export default function HomestayDetailScreen() {
                 </View>
               )}
 
+              {/* AI Itinerary Button */}
+              {checkIn && checkOut && (
+                <TouchableOpacity
+                  style={styles.aiItineraryButton}
+                  onPress={() => {
+                    setShowRoomBookingModal(false);
+                    setShowAIChatModal(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient
+                    colors={['#8b5cf6', '#a78bfa']}
+                    style={styles.aiItineraryButtonGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Ionicons name="sparkles" size={20} color="#fff" />
+                    <ThemedText style={styles.aiItineraryButtonText}>
+                      Gợi ý lịch trình AI
+                    </ThemedText>
+                  </LinearGradient>
+                </TouchableOpacity>
+              )}
+
               {/* Book Button */}
               {checkIn && checkOut && availableRooms.length > 0 && !isCheckingAvailability && selectedRoomForBooking && (
                 <TouchableOpacity
@@ -1313,6 +1861,189 @@ export default function HomestayDetailScreen() {
         </View>
       </Modal>
 
+      {/* Reviews Modal */}
+      <Modal
+        visible={showReviewsModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowReviewsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowReviewsModal(false)}
+          />
+          <View style={styles.reviewsModalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderLeft}>
+                <View style={styles.modalHeaderIconContainer}>
+                  <Ionicons name="star" size={24} color="#fbbf24" />
+                </View>
+                <View>
+                  <ThemedText style={styles.modalTitle}>Đánh giá</ThemedText>
+                  <ThemedText style={styles.modalSubtitle}>
+                    {avgRating > 0 ? `${avgRating}/5` : 'Chưa có đánh giá'} • {reviewCount} đánh giá
+                  </ThemedText>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowReviewsModal(false)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={24} color="#11181C" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.modalScrollView}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {isLoadingReviews ? (
+                <View style={styles.reviewsLoading}>
+                  <ActivityIndicator size="small" color="#0a7ea4" />
+                  <ThemedText style={styles.reviewsLoadingText}>Đang tải đánh giá...</ThemedText>
+                </View>
+              ) : reviews.length > 0 ? (
+                <View style={styles.reviewsList}>
+                  {reviews.map((review) => (
+                    <View key={review._id} style={styles.reviewCard}>
+                      <View style={styles.reviewHeader}>
+                        <View style={styles.reviewUserInfo}>
+                          <View style={styles.reviewAvatar}>
+                            <Ionicons name="person" size={20} color="#0a7ea4" />
+                          </View>
+                          <View style={styles.reviewUserDetails}>
+                            <ThemedText style={styles.reviewUserName}>
+                              {review.user?.username || review.user?.email || 'Người dùng'}
+                            </ThemedText>
+                            <ThemedText style={styles.reviewDate}>
+                              {formatDate(review.createdAt)}
+                            </ThemedText>
+                          </View>
+                        </View>
+                        <View style={styles.reviewRating}>
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <Ionicons
+                              key={star}
+                              name={star <= review.rating ? 'star' : 'star-outline'}
+                              size={16}
+                              color="#fbbf24"
+                            />
+                          ))}
+                        </View>
+                      </View>
+                      
+                      {review.comment && (
+                        <ThemedText style={styles.reviewComment}>
+                          {review.comment}
+                        </ThemedText>
+                      )}
+                      
+                      {review.images && review.images.length > 0 && (
+                        <ScrollView 
+                          horizontal 
+                          showsHorizontalScrollIndicator={false}
+                          style={styles.reviewImages}
+                        >
+                          {review.images.slice(0, 5).map((img: string, index: number) => {
+                            const imageUrl = img.startsWith('http') || img.startsWith('data:image')
+                              ? img
+                              : getReviewImageUrl(img) || img;
+                            return (
+                              <Image
+                                key={index}
+                                source={{ uri: imageUrl }}
+                                style={styles.reviewImage}
+                                resizeMode="cover"
+                              />
+                            );
+                          })}
+                        </ScrollView>
+                      )}
+                      
+                      {review.details && (
+                        <View style={styles.reviewDetails}>
+                          {review.details.cleanliness && (
+                            <View style={styles.reviewDetailItem}>
+                              <ThemedText style={styles.reviewDetailLabel}>Vệ sinh:</ThemedText>
+                              <View style={styles.reviewDetailStars}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Ionicons
+                                    key={star}
+                                    name={star <= review.details.cleanliness ? 'star' : 'star-outline'}
+                                    size={12}
+                                    color="#fbbf24"
+                                  />
+                                ))}
+                              </View>
+                            </View>
+                          )}
+                          {review.details.location && (
+                            <View style={styles.reviewDetailItem}>
+                              <ThemedText style={styles.reviewDetailLabel}>Vị trí:</ThemedText>
+                              <View style={styles.reviewDetailStars}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Ionicons
+                                    key={star}
+                                    name={star <= review.details.location ? 'star' : 'star-outline'}
+                                    size={12}
+                                    color="#fbbf24"
+                                  />
+                                ))}
+                              </View>
+                            </View>
+                          )}
+                          {review.details.service && (
+                            <View style={styles.reviewDetailItem}>
+                              <ThemedText style={styles.reviewDetailLabel}>Dịch vụ:</ThemedText>
+                              <View style={styles.reviewDetailStars}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Ionicons
+                                    key={star}
+                                    name={star <= review.details.service ? 'star' : 'star-outline'}
+                                    size={12}
+                                    color="#fbbf24"
+                                  />
+                                ))}
+                              </View>
+                            </View>
+                          )}
+                          {review.details.value && (
+                            <View style={styles.reviewDetailItem}>
+                              <ThemedText style={styles.reviewDetailLabel}>Giá trị:</ThemedText>
+                              <View style={styles.reviewDetailStars}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Ionicons
+                                    key={star}
+                                    name={star <= review.details.value ? 'star' : 'star-outline'}
+                                    size={12}
+                                    color="#fbbf24"
+                                  />
+                                ))}
+                              </View>
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.reviewsEmpty}>
+                  <Ionicons name="star-outline" size={48} color="#94a3b8" />
+                  <ThemedText style={styles.reviewsEmptyText}>
+                    Chưa có đánh giá nào
+                  </ThemedText>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Map Modal */}
       <Modal
         visible={showMapModal}
@@ -1367,6 +2098,41 @@ export default function HomestayDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Chat Modal */}
+      {homestay.host && user && !isOwner && getHostId() && (
+        <ChatModal
+          visible={showChatModal}
+          onClose={() => setShowChatModal(false)}
+          hostId={getHostId()!}
+          hostName={typeof homestay.host === 'object' ? homestay.host.username : 'Chủ nhà'}
+          hostAvatar={typeof homestay.host === 'object' ? homestay.host.avatar : undefined}
+          homestayId={homestay._id}
+          homestayName={homestay.name}
+        />
+      )}
+
+      {/* AI Chat Modal - Gợi ý lịch trình */}
+      {user && !isOwner && (
+        <AIChatModal
+          visible={showAIChatModal}
+          onClose={() => setShowAIChatModal(false)}
+          homestayName={homestay.name}
+          homestayAddress={
+            [
+              homestay.address.street,
+              homestay.address.ward?.name,
+              homestay.address.district?.name,
+              homestay.address.province?.name,
+            ]
+              .filter(Boolean)
+              .join(', ')
+          }
+          homestayId={homestay._id}
+          checkIn={checkIn || undefined}
+          checkOut={checkOut || undefined}
+        />
+      )}
     </View>
   );
 }
@@ -1501,6 +2267,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 4,
   },
+  imageOverlayRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  imageOverlayRatingText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   infoCard: {
     backgroundColor: '#fff',
     marginHorizontal: 16,
@@ -1593,6 +2373,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#11181C',
+  },
+  floatingButtonContainer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 16,
+    right: 16,
+    zIndex: 100,
+  },
+  floatingButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#0a7ea4',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  floatingButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 28,
+    gap: 12,
+  },
+  floatingButtonText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 0.5,
   },
   descriptionCard: {
     backgroundColor: '#fff',
@@ -2028,6 +2838,31 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+  aiItineraryButton: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#8b5cf6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  aiItineraryButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    gap: 10,
+  },
+  aiItineraryButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
   calendarModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -2221,6 +3056,38 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '500',
   },
+  hostHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hostInfoContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  hostAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#f0f9ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hostDetails: {
+    flex: 1,
+    gap: 4,
+  },
+  hostName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#11181C',
+  },
+  hostLabel: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -2307,6 +3174,338 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748b',
     fontWeight: '500',
+  },
+  reviewsLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    gap: 12,
+  },
+  reviewsLoadingText: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  reviewsList: {
+    gap: 16,
+  },
+  reviewCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  reviewUserInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  reviewAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0f9ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reviewUserDetails: {
+    flex: 1,
+    gap: 4,
+  },
+  reviewUserName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#11181C',
+  },
+  reviewDate: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  reviewRating: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  reviewComment: {
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  reviewImages: {
+    marginBottom: 12,
+  },
+  reviewImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    marginRight: 8,
+    backgroundColor: '#f1f5f9',
+  },
+  reviewDetails: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  reviewDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reviewDetailLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  reviewDetailStars: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  viewMoreReviews: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    gap: 8,
+    marginTop: 8,
+  },
+  viewMoreReviewsText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0a7ea4',
+  },
+  reviewsEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  reviewsEmptyText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  reviewsModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    minHeight: 500,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 16,
+    zIndex: 1000,
+  },
+  weatherCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    padding: 18,
+    shadowColor: '#0a7ea4',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1.5,
+    borderColor: '#e0f2fe',
+  },
+  weatherCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  weatherIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: '#f0f9ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  weatherEmoji: {
+    fontSize: 32,
+  },
+  weatherHeaderInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  weatherCardTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#11181C',
+  },
+  weatherLocationName: {
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  weatherCardContent: {
+    gap: 16,
+  },
+  weatherMainInfo: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  weatherTemperature: {
+    fontSize: 48,
+    fontWeight: '800',
+    color: '#0a7ea4',
+    lineHeight: 56,
+  },
+  weatherDescription: {
+    fontSize: 16,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  weatherDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  weatherDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  weatherDetailInfo: {
+    gap: 4,
+  },
+  weatherDetailLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  weatherDetailValue: {
+    fontSize: 14,
+    color: '#11181C',
+    fontWeight: '700',
+  },
+  weatherLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    gap: 12,
+  },
+  weatherLoadingText: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  weatherForecastSection: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  weatherForecastHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  weatherForecastTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#11181C',
+  },
+  weatherForecastScroll: {
+    flexGrow: 0,
+  },
+  weatherForecastContent: {
+    paddingRight: 16,
+    gap: 12,
+  },
+  weatherForecastDay: {
+    width: 80,
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    gap: 8,
+  },
+  weatherForecastDayToday: {
+    backgroundColor: '#f0f9ff',
+    borderColor: '#0a7ea4',
+    borderWidth: 2,
+  },
+  weatherForecastDayName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748b',
+    textTransform: 'uppercase',
+  },
+  weatherForecastDayNameToday: {
+    color: '#0a7ea4',
+    fontWeight: '700',
+  },
+  weatherForecastDayDate: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  weatherForecastEmoji: {
+    fontSize: 28,
+    marginVertical: 4,
+  },
+  weatherForecastTemps: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  weatherForecastTempMax: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#11181C',
+  },
+  weatherForecastTempMin: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#94a3b8',
+  },
+  weatherForecastRain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  weatherForecastRainText: {
+    fontSize: 10,
+    color: '#0a7ea4',
+    fontWeight: '600',
   },
 });
 

@@ -1,7 +1,11 @@
 const paymentService = require('../services/paymentService');
 const bookingService = require('../services/bookingService');
 const couponService = require('../services/couponService');
+const emailService = require('../services/emailService');
 const Booking = require('../models/Booking');
+const User = require('../models/User');
+const notificationService = require('../services/notificationService');
+const Homestay = require('../models/Homestay');
 
 class PaymentController {
   // Tạo payment URL từ MoMo
@@ -198,9 +202,67 @@ class PaymentController {
         booking.status = 'confirmed'; // Tự động confirm booking khi thanh toán thành công
         await booking.save();
 
+        // 💰 CHUYỂN TIỀN VÀO VÍ HOST
+        try {
+          console.log('💰 Processing host payment for booking:', bookingId);
+          await bookingService.processHostPayment(bookingId);
+          console.log('✅ Host payment processed successfully');
+        } catch (hostPaymentError) {
+          console.error('❌ Error processing host payment:', hostPaymentError);
+          // Không throw error để không ảnh hưởng callback
+        }
+
         // Tăng số lần sử dụng coupon nếu có
         if (booking.couponCode) {
           await couponService.incrementCouponUsage(booking.couponCode);
+        }
+
+        // Populate thông tin để gửi email
+        await booking.populate([
+          { path: 'homestay', select: 'name address images' },
+          { path: 'room', select: 'name type pricePerNight' },
+          { path: 'guest', select: 'username email' }
+        ]);
+
+        // Gửi email xác nhận thanh toán thành công
+        try {
+          let guestEmail = null;
+          if (booking.guest && typeof booking.guest === 'object' && booking.guest.email) {
+            guestEmail = booking.guest.email;
+          } else {
+            const guest = await User.findById(booking.guest).select('email');
+            guestEmail = guest?.email;
+          }
+
+          if (guestEmail) {
+            emailService.sendBookingConfirmation(booking, guestEmail)
+              .then(result => {
+                if (result.success) {
+                  console.log('✅ Email xác nhận thanh toán đã được gửi đến:', guestEmail);
+                } else {
+                  console.warn('⚠️ Không thể gửi email xác nhận:', result.message);
+                }
+              })
+              .catch(error => {
+                console.error('❌ Lỗi khi gửi email xác nhận:', error);
+              });
+          }
+        } catch (emailError) {
+          console.error('❌ Lỗi khi xử lý email:', emailError);
+        }
+
+        // Tạo notifications cho user và host
+        try {
+          const guestId = typeof booking.guest === 'object' ? booking.guest._id : booking.guest;
+          const homestay = await Homestay.findById(booking.homestay).select('host');
+          const hostId = homestay && homestay.host 
+            ? (typeof homestay.host === 'object' ? homestay.host._id : homestay.host)
+            : null;
+          
+          await notificationService.notifyPaymentSuccess(bookingId, guestId, hostId);
+        } catch (notifError) {
+          console.error('Error creating payment notifications:', notifError);
+          // Không throw error, chỉ log
         }
 
         console.log(`✅ Payment successful for booking ${bookingId}, transId: ${transId}`);
@@ -529,9 +591,67 @@ class PaymentController {
         booking.status = 'confirmed'; // Tự động confirm booking khi thanh toán thành công
         await booking.save();
 
+        // 💰 CHUYỂN TIỀN VÀO VÍ HOST
+        try {
+          console.log('💰 Processing host payment for booking:', bookingId);
+          await bookingService.processHostPayment(bookingId);
+          console.log('✅ Host payment processed successfully');
+        } catch (hostPaymentError) {
+          console.error('❌ Error processing host payment:', hostPaymentError);
+          // Không throw error để không ảnh hưởng callback
+        }
+
         // Tăng số lần sử dụng coupon nếu có
         if (booking.couponCode) {
           await couponService.incrementCouponUsage(booking.couponCode);
+        }
+
+        // Populate thông tin để gửi email
+        await booking.populate([
+          { path: 'homestay', select: 'name address images' },
+          { path: 'room', select: 'name type pricePerNight' },
+          { path: 'guest', select: 'username email' }
+        ]);
+
+        // Gửi email xác nhận thanh toán thành công
+        try {
+          let guestEmail = null;
+          if (booking.guest && typeof booking.guest === 'object' && booking.guest.email) {
+            guestEmail = booking.guest.email;
+          } else {
+            const guest = await User.findById(booking.guest).select('email');
+            guestEmail = guest?.email;
+          }
+
+          if (guestEmail) {
+            emailService.sendBookingConfirmation(booking, guestEmail)
+              .then(result => {
+                if (result.success) {
+                  console.log('✅ Email xác nhận thanh toán đã được gửi đến:', guestEmail);
+                } else {
+                  console.warn('⚠️ Không thể gửi email xác nhận:', result.message);
+                }
+              })
+              .catch(error => {
+                console.error('❌ Lỗi khi gửi email xác nhận:', error);
+              });
+          }
+        } catch (emailError) {
+          console.error('❌ Lỗi khi xử lý email:', emailError);
+        }
+
+        // Tạo notifications cho user và host
+        try {
+          const guestId = typeof booking.guest === 'object' ? booking.guest._id : booking.guest;
+          const homestay = await Homestay.findById(booking.homestay).select('host');
+          const hostId = homestay && homestay.host 
+            ? (typeof homestay.host === 'object' ? homestay.host._id : homestay.host)
+            : null;
+          
+          await notificationService.notifyPaymentSuccess(bookingId, guestId, hostId);
+        } catch (notifError) {
+          console.error('Error creating payment notifications:', notifError);
+          // Không throw error, chỉ log
         }
 
         console.log(`✅ Payment successful for booking ${bookingId}, TxnRef: ${vnp_TxnRef}`);

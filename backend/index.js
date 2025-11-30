@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const http = require('http');
+const { Server } = require('socket.io');
 const connectDB = require('./src/config/database');
 
 // Load environment variables
@@ -11,6 +13,15 @@ connectDB().then(() => {
   // Khởi tạo roles mặc định sau khi kết nối database
   const { initializeRoles } = require('./src/config/roles');
   initializeRoles();
+  
+  // Khởi tạo email service để verify connection
+  const emailService = require('./src/services/emailService');
+  console.log('Email service đã được khởi tạo');
+  
+  // Khởi tạo scheduled tasks
+  const { setupScheduledTasks } = require('./src/services/scheduledTasksService');
+  setupScheduledTasks();
+  console.log('Scheduled tasks đã được khởi tạo');
 });
 
 // Khởi tạo app
@@ -46,19 +57,31 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Serve static files (uploads)
 const path = require('path');
 const uploadsPath = path.join(__dirname, 'uploads');
+const avatarsUploadsPath = path.join(__dirname, 'uploads', 'avatars');
 const homestaysUploadsPath = path.join(__dirname, 'uploads', 'homestays');
 const idcardsUploadsPath = path.join(__dirname, 'uploads', 'idcards');
+const reviewsUploadsPath = path.join(__dirname, 'uploads', 'reviews');
+const chatUploadsPath = path.join(__dirname, 'uploads', 'chat');
 
 // Tạo thư mục nếu chưa có
 const fs = require('fs');
 if (!fs.existsSync(uploadsPath)) {
   fs.mkdirSync(uploadsPath, { recursive: true });
 }
+if (!fs.existsSync(avatarsUploadsPath)) {
+  fs.mkdirSync(avatarsUploadsPath, { recursive: true });
+}
 if (!fs.existsSync(homestaysUploadsPath)) {
   fs.mkdirSync(homestaysUploadsPath, { recursive: true });
 }
 if (!fs.existsSync(idcardsUploadsPath)) {
   fs.mkdirSync(idcardsUploadsPath, { recursive: true });
+}
+if (!fs.existsSync(reviewsUploadsPath)) {
+  fs.mkdirSync(reviewsUploadsPath, { recursive: true });
+}
+if (!fs.existsSync(chatUploadsPath)) {
+  fs.mkdirSync(chatUploadsPath, { recursive: true });
 }
 
 // Serve static files - ĐẶT TRƯỚC routes để tránh conflict
@@ -71,7 +94,9 @@ app.use('/uploads', express.static(uploadsPath, {
 }));
 
 console.log('Static files serving from:', uploadsPath);
+console.log('Avatars images serving from:', avatarsUploadsPath);
 console.log('Homestays images serving from:', homestaysUploadsPath);
+console.log('Full avatars path:', path.resolve(avatarsUploadsPath));
 console.log('Full homestays path:', path.resolve(homestaysUploadsPath));
 
 // Routes - ĐẶT SAU static files
@@ -81,6 +106,21 @@ app.use('/api/homestays', require('./src/routes/homestayRoutes'));
 app.use('/api/bookings', require('./src/routes/bookingRoutes'));
 app.use('/api/host-requests', require('./src/routes/hostRequestRoutes'));
 app.use('/api/coupons', require('./src/routes/couponRoutes'));
+app.use('/api/wallet', require('./src/routes/walletRoutes'));
+app.use('/api/chats', require('./src/routes/chatRoutes'));
+app.use('/api/chat', require('./src/routes/chatRoutes'));
+app.use('/api/reviews', require('./src/routes/reviewRoutes'));
+app.use('/api/admin', require('./src/routes/adminRoutes'));
+
+// Load notification routes với error handling
+try {
+  const notificationRoutes = require('./src/routes/notificationRoutes');
+  app.use('/api/notifications', notificationRoutes);
+  console.log('Notification routes registered successfully');
+} catch (error) {
+  console.error('Error loading notification routes:', error);
+  console.error('Error stack:', error.stack);
+}
 
 // Load payment routes với error handling
 try {
@@ -100,6 +140,12 @@ console.log('  - /api/bookings');
 console.log('  - /api/payments');
 console.log('  - /api/host-requests');
 console.log('  - /api/coupons');
+console.log('  - /api/wallet');
+console.log('  - /api/chats');
+console.log('  - /api/chat');
+console.log('  - /api/reviews');
+console.log('  - /api/notifications');
+console.log('  - /api/admin');
 
 // Route test
 app.get('/', (req, res) => {
@@ -143,11 +189,32 @@ app.use((req, res) => {
   });
 });
 
-// Khởi động server
+// Tạo HTTP server để dùng với Socket.io
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server đang chạy tại port ${PORT}`);
+const server = http.createServer(app);
+
+// Setup Socket.io
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
+  transports: ['websocket', 'polling']
 });
 
-module.exports = app;
+// Setup socket handler
+const { setupSocketIO } = require('./src/socket/socketHandler');
+setupSocketIO(io);
 
+// Lưu io instance để có thể dùng ở nơi khác
+app.set('io', io);
+
+// Khởi động server
+server.listen(PORT, () => {
+  console.log(`Server đang chạy tại port ${PORT}`);
+  console.log(`Socket.io đã được khởi tạo`);
+});
+
+// Export để có thể dùng io ở nơi khác
+module.exports = { app, server, getIO: () => io };

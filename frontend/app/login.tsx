@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   TextInput,
@@ -19,14 +19,22 @@ import { Colors } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { signInWithGoogle } from '@/utils/googleAuth';
+import { getBiometricName } from '@/services/biometricService';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isBiometricLoading, setIsBiometricLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login, loginWithGoogle } = useAuth();
+  const { 
+    login, 
+    loginWithGoogle, 
+    loginWithBiometric, 
+    biometricInfo,
+    saveBiometricCredentials 
+  } = useAuth();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
@@ -40,11 +48,48 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await login(email.trim(), password);
+      
+      // Hỏi user có muốn lưu để đăng nhập bằng vân tay không
+      if (biometricInfo?.available) {
+        Alert.alert(
+          'Lưu thông tin đăng nhập?',
+          `Bạn có muốn lưu thông tin để đăng nhập bằng ${getBiometricName(biometricInfo.type)} không?`,
+          [
+            {
+              text: 'Không',
+              style: 'cancel'
+            },
+            {
+              text: 'Có',
+              onPress: async () => {
+                try {
+                  await saveBiometricCredentials(email.trim(), password);
+                } catch (error: any) {
+                  console.error('Error saving biometric credentials:', error);
+                }
+              }
+            }
+          ]
+        );
+      }
+      
       router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert('Đăng nhập thất bại', error.message || 'Vui lòng thử lại');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    setIsBiometricLoading(true);
+    try {
+      await loginWithBiometric();
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      Alert.alert('Đăng nhập thất bại', error.message || 'Vui lòng thử lại');
+    } finally {
+      setIsBiometricLoading(false);
     }
   };
 
@@ -157,6 +202,7 @@ export default function LoginScreen() {
                   autoComplete="password"
                   editable={!isLoading}
                 />
+                <View style={styles.passwordActions}>
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
                   style={styles.eyeIcon}
@@ -167,6 +213,30 @@ export default function LoginScreen() {
                     color={colors.icon}
                   />
                 </TouchableOpacity>
+                  
+                  {/* Biometric Login Icon */}
+                  {biometricInfo?.available && (
+                    <>
+                      <View style={styles.iconDivider} />
+                      <TouchableOpacity
+                        onPress={handleBiometricLogin}
+                        style={styles.biometricIcon}
+                        disabled={isLoading || isBiometricLoading}
+                        activeOpacity={0.7}
+                      >
+                        {isBiometricLoading ? (
+                          <ActivityIndicator size="small" color="#0a7ea4" />
+                        ) : (
+                          <Ionicons
+                            name={biometricInfo.type === 'facial' ? 'scan' : 'finger-print'}
+                            size={22}
+                            color="#0a7ea4"
+                          />
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
               </View>
             </View>
 
@@ -190,6 +260,16 @@ export default function LoginScreen() {
                   <ThemedText style={styles.buttonText}>Đăng Nhập</ThemedText>
                 )}
               </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.forgotPasswordButton}
+              onPress={() => router.push('/forgot-password' as any)}
+              disabled={isLoading}
+            >
+              <ThemedText style={styles.forgotPasswordText}>
+                Quên mật khẩu?
+              </ThemedText>
             </TouchableOpacity>
 
             <View style={styles.divider}>
@@ -348,8 +428,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingVertical: 0,
   },
+  passwordActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   eyeIcon: {
     padding: 4,
+  },
+  iconDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e0e0e0',
+  },
+  biometricIcon: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: '#f0f9ff',
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   button: {
     borderRadius: 12,
@@ -374,6 +473,16 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '700',
+  },
+  forgotPasswordButton: {
+    alignItems: 'flex-end',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: '#0a7ea4',
+    fontWeight: '600',
   },
   divider: {
     flexDirection: 'row',

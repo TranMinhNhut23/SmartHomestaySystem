@@ -1,22 +1,50 @@
+import { Platform } from 'react-native';
+
 // Helper để normalize URL - chuyển HTTPS sang HTTP cho development
 const normalizeUrl = (url: string): string => {
   // Nếu là localhost hoặc IP local và dùng HTTPS, chuyển sang HTTP
+  // KHÔNG chuyển nếu là ngrok hoặc domain thật
   if (url.startsWith('https://')) {
     const isLocal = url.includes('localhost') || 
                    url.includes('127.0.0.1') || 
                    /^https:\/\/192\.168\.\d+\.\d+/.test(url) ||
                    /^https:\/\/10\.\d+\.\d+\.\d+/.test(url);
-    if (isLocal) {
+    const isNgrok = url.includes('ngrok');
+    
+    // Chỉ chuyển sang http nếu là local và KHÔNG phải ngrok
+    if (isLocal && !isNgrok) {
       return url.replace('https://', 'http://');
     }
   }
   return url;
 };
 
-const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
+// Hàm để lấy API URL phù hợp với platform
+const getDefaultApiUrl = (): string => {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+  
+  // Default URLs cho development
+  // Android emulator không thể dùng localhost, cần dùng 10.0.2.2
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:5000/api';
+  }
+  
+  // iOS simulator và web có thể dùng localhost
+  return 'http://localhost:5000/api';
+};
+
+const rawApiUrl = getDefaultApiUrl();
 const API_BASE_URL = normalizeUrl(rawApiUrl);
-const rawBaseUrl = process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
+const rawBaseUrl = rawApiUrl.replace('/api', '');
 const BASE_URL = normalizeUrl(rawBaseUrl);
+
+console.log('=== API Service Initialized ===');
+console.log('Platform:', Platform.OS);
+console.log('API_BASE_URL:', API_BASE_URL);
+console.log('BASE_URL:', BASE_URL);
+console.log('==============================');
 
 // Helper để lấy full URL của avatar
 export const getAvatarUrl = (avatar: string | null | undefined): string | null => {
@@ -82,6 +110,7 @@ class ApiService {
         ...options,
         headers,
         signal: controller.signal,
+        cache: 'no-store', // Disable cache cho tất cả requests
       });
 
       clearTimeout(timeoutId);
@@ -160,6 +189,33 @@ class ApiService {
     }
   }
 
+  // Generic HTTP methods
+  async get<T = any>(endpoint: string) {
+    return this.request<T>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async post<T = any>(endpoint: string, data?: any) {
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
+  async put<T = any>(endpoint: string, data?: any) {
+    return this.request<T>(endpoint, {
+      method: 'PUT',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
+  async delete<T = any>(endpoint: string) {
+    return this.request<T>(endpoint, {
+      method: 'DELETE',
+    });
+  }
+
   // Auth endpoints
   async login(email: string, password: string) {
     return this.request<{
@@ -172,25 +228,132 @@ class ApiService {
     });
   }
 
-  async register(userData: {
+  async sendRegistrationOTP(userData: {
     username: string;
     email: string;
     password: string;
+    phone?: string;
     avatar?: string;
     roleName?: 'user' | 'host';
   }) {
     return this.request<{
-      user: any;
-      token: string;
-      refreshToken: string;
-    }>('/auth/register', {
+      email: string;
+    }>('/auth/register/send-otp', {
       method: 'POST',
       body: JSON.stringify(userData),
     });
   }
 
+  async verifyOTP(email: string, otpCode: string) {
+    return this.request<{
+      user: any;
+      token: string;
+      refreshToken: string;
+    }>('/auth/register/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otpCode }),
+    });
+  }
+
+  async resendOTP(email: string) {
+    return this.request('/auth/register/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async register(userData: {
+    username: string;
+    email: string;
+    password: string;
+    phone?: string;
+    avatar?: string;
+    roleName?: 'user' | 'host';
+  }) {
+    // Backward compatibility - redirect to sendOTP
+    return this.sendRegistrationOTP(userData);
+  }
+
   async getCurrentUser() {
     return this.request<any>('/auth/me');
+  }
+
+  async updateProfile(userId: string | null, profileData: {
+    username?: string;
+    email?: string;
+    phone?: string | null;
+    avatar?: string | null;
+    emailChangeOTPVerified?: boolean;
+  }) {
+    const endpoint = userId ? `/auth/profile/${userId}` : '/auth/profile';
+    return this.request<any>(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(profileData),
+    });
+  }
+
+  // Email change OTP APIs
+  async sendEmailChangeOTP(newEmail: string) {
+    return this.request<any>('/auth/email-change/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ newEmail }),
+    });
+  }
+
+  async verifyEmailChangeOTP(newEmail: string, otpCode: string) {
+    return this.request<any>('/auth/email-change/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ newEmail, otpCode }),
+    });
+  }
+
+  async resendEmailChangeOTP(newEmail: string) {
+    return this.request<any>('/auth/email-change/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ newEmail }),
+    });
+  }
+
+  // Forgot password APIs
+  async generateCaptcha() {
+    return this.request<{
+      sessionId: string;
+      question: string;
+    }>('/auth/forgot-password/captcha', {
+      method: 'GET',
+    });
+  }
+
+  async requestPasswordReset(identifier: string, captchaSessionId: string, captchaAnswer: string) {
+    return this.request<{
+      email: string;
+    }>('/auth/forgot-password/request', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, captchaSessionId, captchaAnswer }),
+    });
+  }
+
+  async verifyPasswordResetOTP(email: string, otpCode: string) {
+    return this.request<{
+      userId: string;
+    }>('/auth/forgot-password/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otpCode }),
+    });
+  }
+
+  async resetPassword(email: string, otpCode: string, newPassword: string, confirmPassword: string) {
+    return this.request('/auth/forgot-password/reset', {
+      method: 'POST',
+      body: JSON.stringify({ email, otpCode, newPassword, confirmPassword }),
+    });
+  }
+
+  async resendPasswordResetOTP(identifier: string) {
+    return this.request('/auth/forgot-password/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    });
   }
 
   async loginWithGoogle(idToken: string) {
@@ -295,6 +458,12 @@ class ApiService {
 
   async getHomestayById(id: string) {
     return this.request<any>(`/homestays/${id}`, {
+      method: 'GET',
+    });
+  }
+
+  async getHomestayWeather(homestayId: string) {
+    return this.request<any>(`/homestays/${homestayId}/weather`, {
       method: 'GET',
     });
   }
@@ -423,6 +592,69 @@ class ApiService {
     });
   }
 
+  // Refund-related methods
+  async getRefundableBookings() {
+    return this.request<any>('/bookings/refundable', {
+      method: 'GET',
+    });
+  }
+
+  async requestRefund(bookingId: string, reason: string) {
+    return this.request<any>(`/bookings/${bookingId}/request-refund`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  // Host: Get refund requests for host's homestays
+  async getHostRefundRequests(params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    
+    return this.request<any>(`/bookings/host-refund-requests?${queryParams.toString()}`, {
+      method: 'GET',
+    });
+  }
+
+  // Host: Process refund request (approve/reject)
+  async processHostRefund(bookingId: string, action: 'approve' | 'reject', adminNote?: string) {
+    return this.request<any>(`/bookings/${bookingId}/process-host-refund`, {
+      method: 'POST',
+      body: JSON.stringify({ action, adminNote }),
+    });
+  }
+
+  async getRefundRequests(params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    
+    const queryString = queryParams.toString();
+    const endpoint = `/bookings/refund-requests${queryString ? `?${queryString}` : ''}`;
+    
+    return this.request<any>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async processManualRefund(bookingId: string, reason: string, percentage: number) {
+    return this.request<any>(`/bookings/${bookingId}/refund`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, percentage }),
+    });
+  }
+
   async createPayment(bookingId: string, amount: number, orderInfo?: string, paymentMethod: 'momo' | 'vnpay' = 'momo') {
     // Chọn endpoint dựa trên payment method
     const endpoint = paymentMethod === 'vnpay' 
@@ -436,6 +668,19 @@ class ApiService {
         amount,
         orderInfo
       }),
+    });
+  }
+
+  // Wallet methods
+  async getWallet() {
+    return this.request<any>('/wallet', {
+      method: 'GET',
+    });
+  }
+
+  async payBookingWithWallet(bookingId: string) {
+    return this.request<any>(`/bookings/${bookingId}/pay-with-wallet`, {
+      method: 'POST',
     });
   }
 
@@ -604,9 +849,314 @@ class ApiService {
       method: 'DELETE',
     });
   }
+
+  // Review endpoints
+  async createReview(reviewData: {
+    bookingId: string;
+    rating: number;
+    comment?: string;
+    images?: string[];
+    videos?: string[];
+    details?: {
+      cleanliness?: number;
+      location?: number;
+      value?: number;
+      service?: number;
+    };
+    isPublic?: boolean;
+  }) {
+    return this.request<any>('/reviews', {
+      method: 'POST',
+      body: JSON.stringify(reviewData),
+    });
+  }
+
+  async updateReview(reviewId: string, reviewData: {
+    rating?: number;
+    comment?: string;
+    images?: string[];
+    videos?: string[];
+    details?: {
+      cleanliness?: number;
+      location?: number;
+      value?: number;
+      service?: number;
+    };
+    isPublic?: boolean;
+  }) {
+    return this.request<any>(`/reviews/${reviewId}`, {
+      method: 'PUT',
+      body: JSON.stringify(reviewData),
+    });
+  }
+
+  async getReviewById(reviewId: string) {
+    return this.request<any>(`/reviews/${reviewId}`, {
+      method: 'GET',
+    });
+  }
+
+  async getReviewByBookingId(bookingId: string) {
+    return this.request<any>(`/reviews/booking/${bookingId}`, {
+      method: 'GET',
+    });
+  }
+
+  async getHomestayReviews(homestayId: string, params?: {
+    page?: number;
+    limit?: number;
+    rating?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.rating) queryParams.append('rating', params.rating.toString());
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    
+    const queryString = queryParams.toString();
+    const endpoint = `/reviews/homestay/${homestayId}${queryString ? `?${queryString}` : ''}`;
+    
+    return this.request<any>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async getMyReviews(params?: {
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    
+    const queryString = queryParams.toString();
+    const endpoint = `/reviews/my-reviews${queryString ? `?${queryString}` : ''}`;
+    
+    return this.request<any>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async deleteReview(reviewId: string) {
+    return this.request<any>(`/reviews/${reviewId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Notification APIs
+  async getNotifications(params?: {
+    page?: number;
+    limit?: number;
+    isRead?: boolean;
+    type?: string;
+    role?: string;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.isRead !== undefined) queryParams.append('isRead', params.isRead.toString());
+    if (params?.type) queryParams.append('type', params.type);
+    if (params?.role) queryParams.append('role', params.role);
+    // Thêm timestamp để bypass cache
+    queryParams.append('t', new Date().getTime().toString());
+    
+    const queryString = queryParams.toString();
+    const endpoint = `/notifications${queryString ? `?${queryString}` : ''}`;
+    
+    return this.request<any>(endpoint, {
+      method: 'GET',
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      },
+    });
+  }
+
+  async getUnreadNotificationCount() {
+    // Thêm timestamp để bypass cache
+    const timestamp = new Date().getTime();
+    return this.request<{ count: number }>(`/notifications/unread-count?t=${timestamp}`, {
+      method: 'GET',
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      },
+    });
+  }
+
+  async markNotificationAsRead(notificationId: string) {
+    return this.request<any>(`/notifications/${notificationId}/read`, {
+      method: 'PUT',
+    });
+  }
+
+  async markAllNotificationsAsRead() {
+    return this.request<any>('/notifications/mark-all-read', {
+      method: 'PUT',
+    });
+  }
+
+  // Chat APIs
+  async getUserChats(params?: { page?: number; limit?: number }) {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    
+    const queryString = queryParams.toString();
+    return this.request<any>(`/chats/my-chats${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  async getChatById(chatId: string) {
+    return this.request<any>(`/chats/${chatId}`, {
+      method: 'GET',
+    });
+  }
+
+  async getChatMessages(chatId: string, params?: { page?: number; limit?: number }) {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    
+    const queryString = queryParams.toString();
+    return this.request<any>(`/chats/${chatId}/messages${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  async sendMessage(chatId: string, content: string, type: string = 'text') {
+    return this.request<any>(`/chats/${chatId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content, type }),
+    });
+  }
+
+  async markChatAsRead(chatId: string) {
+    return this.request<any>(`/chats/${chatId}/read`, {
+      method: 'PUT',
+    });
+  }
+
+  async getUnreadChatCount() {
+    return this.request<{ unreadCount: number }>('/chats/unread-count', {
+      method: 'GET',
+    });
+  }
+
+  async findOrCreateChat(hostId: string, homestayId: string) {
+    return this.request<any>('/chats/find-or-create', {
+      method: 'POST',
+      body: JSON.stringify({ hostId, homestayId }),
+    });
+  }
+
+  async deleteNotification(notificationId: string) {
+    return this.request<any>(`/notifications/${notificationId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteAllReadNotifications() {
+    return this.request<any>('/notifications/read/delete-all', {
+      method: 'DELETE',
+    });
+  }
+
+  // Admin APIs - User Management
+  async getAllUsers(params?: {
+    roleName?: 'user' | 'host' | 'admin';
+    search?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.roleName) queryParams.append('roleName', params.roleName);
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    
+    const queryString = queryParams.toString();
+    return this.request<any>(`/admin/users${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  async getUserById(userId: string) {
+    return this.request<any>(`/admin/users/${userId}`, {
+      method: 'GET',
+    });
+  }
+
+  async updateUser(userId: string, userData: {
+    username?: string;
+    email?: string;
+    phone?: string;
+    avatar?: string;
+    roleName?: 'user' | 'host' | 'admin';
+  }) {
+    return this.request<any>(`/admin/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async toggleUserStatus(userId: string) {
+    return this.request<any>(`/admin/users/${userId}/toggle-status`, {
+      method: 'PATCH',
+    });
+  }
+
+  async deleteUser(userId: string) {
+    return this.request<any>(`/admin/users/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Admin APIs - Statistics
+  async getDashboardStats() {
+    return this.request<any>('/admin/stats/dashboard', {
+      method: 'GET',
+    });
+  }
+
+  async getRevenueStats(params?: {
+    period?: 'day' | 'month';
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.period) queryParams.append('period', params.period);
+    if (params?.startDate) queryParams.append('startDate', params.startDate);
+    if (params?.endDate) queryParams.append('endDate', params.endDate);
+    
+    const queryString = queryParams.toString();
+    return this.request<any>(`/admin/stats/revenue${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
+    });
+  }
+
+  // Admin APIs - Maintenance Fee
+  async processMaintenanceFeeManually() {
+    return this.request<any>('/admin/maintenance-fee/process', {
+      method: 'POST',
+    });
+  }
 }
 
 export const apiService = new ApiService(API_BASE_URL);
+export { BASE_URL };
 
 // Helper để lấy full URL của ảnh homestay
 export const getHomestayImageUrl = (image: string | null | undefined): string | null => {
@@ -644,3 +1194,20 @@ export const getIdCardImageUrl = (image: string | null | undefined): string | nu
   return `${BASE_URL}/uploads/idcards/${image}`;
 };
 
+// Helper để lấy full URL của ảnh review
+export const getReviewImageUrl = (image: string | null | undefined): string | null => {
+  if (!image) return null;
+  
+  // Nếu đã là full URL hoặc base64, trả về nguyên
+  if (image.startsWith('http') || image.startsWith('data:image')) {
+    return image;
+  }
+  
+  // Nếu là relative URL, thêm base URL
+  if (image.startsWith('/')) {
+    return `${BASE_URL}${image}`;
+  }
+  
+  // Nếu chỉ là filename, thêm path
+  return `${BASE_URL}/uploads/reviews/${image}`;
+};

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   StyleSheet,
   ScrollView,
@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWallet } from '@/contexts/WalletContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { UserInfoSection } from '@/components/account/UserInfoSection';
@@ -15,11 +16,24 @@ import { PaymentAndRewardsSection } from '@/components/account/PaymentAndRewards
 import { FeatureCardsSection } from '@/components/account/FeatureCardsSection';
 import { HostDashboardSection } from '@/components/account/HostDashboardSection';
 import { AdminDashboardSection } from '@/components/account/AdminDashboardSection';
+import { WalletSection } from '@/components/account/WalletSection';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function AccountScreen() {
   const { user, isAuthenticated, logout, isLoading } = useAuth();
+  const { refreshWallet } = useWallet();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  // Refresh wallet mỗi khi screen được focus (để cập nhật số dư sau khi nạp tiền)
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthenticated) {
+        console.log('🔄 Account screen focused, refreshing wallet...');
+        refreshWallet();
+      }
+    }, [isAuthenticated, refreshWallet])
+  );
 
   const handleLogout = async () => {
     await logout();
@@ -70,14 +84,23 @@ export default function AccountScreen() {
             <HostDashboardSection user={user} />
             <AuthButtonsSection isAuthenticated={isAuthenticated} onLogout={handleLogout} />
           </>
+        ) : isAuthenticated && user ? (
+          <>
+            <UserInfoSection isAuthenticated={isAuthenticated} user={user} />
+            <WalletSection />
+            <View style={styles.contentSection}>
+              <FeatureCardsSection isAuthenticated={isAuthenticated} user={user} />
+            </View>
+            <AuthButtonsSection isAuthenticated={isAuthenticated} onLogout={handleLogout} />
+          </>
         ) : (
           <>
             <UserInfoSection isAuthenticated={isAuthenticated} user={user} />
-            <AuthButtonsSection isAuthenticated={isAuthenticated} onLogout={handleLogout} />
             <View style={styles.contentSection}>
               <PaymentAndRewardsSection />
               <FeatureCardsSection isAuthenticated={isAuthenticated} user={user} />
             </View>
+            <AuthButtonsSection isAuthenticated={isAuthenticated} onLogout={handleLogout} />
           </>
         )}
       </ScrollView>
@@ -108,10 +131,11 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 0,
-    paddingTop: 16,
+    paddingTop: 8,
     paddingBottom: 40,
   },
   contentSection: {
-    gap: 16,
+    paddingHorizontal: 16,
+    gap: 20,
   },
 });

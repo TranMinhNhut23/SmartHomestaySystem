@@ -9,7 +9,16 @@ import {
   RefreshControl,
   TextInput,
   Modal,
+  Animated,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
+
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -18,6 +27,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBooking } from '@/contexts/BookingContext';
 import { ROOM_TYPES } from '@/types/homestay';
+import { ReviewModal } from '@/components/ReviewModal';
+import { apiService } from '@/services/api';
 
 interface Booking {
   _id: string;
@@ -79,6 +90,11 @@ export default function MyBookingsScreen() {
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [selectedBookingForReview, setSelectedBookingForReview] = useState<Booking | null>(null);
+  const [existingReview, setExistingReview] = useState<any>(null);
+  const [reviews, setReviews] = useState<Record<string, any>>({});
+  const [expandedBookings, setExpandedBookings] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -109,6 +125,9 @@ export default function MyBookingsScreen() {
         if (response.pagination) {
           setPagination(response.pagination);
         }
+        
+        // Load reviews cho các booking completed
+        await loadReviewsForCompletedBookings(response.data);
       } else {
         throw new Error(response.message || 'Không thể tải danh sách đơn đặt phòng');
       }
@@ -118,6 +137,29 @@ export default function MyBookingsScreen() {
     } finally {
       setIsLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const loadReviewsForCompletedBookings = async (bookingsList: Booking[]) => {
+    try {
+      const completedBookings = bookingsList.filter(b => b.status === 'completed');
+      const reviewsMap: Record<string, any> = {};
+      
+      for (const booking of completedBookings) {
+        try {
+          const reviewResponse = await apiService.getReviewByBookingId(booking._id);
+          if (reviewResponse.success && reviewResponse.data) {
+            reviewsMap[booking._id] = reviewResponse.data;
+          }
+        } catch (error) {
+          // Không có review, bỏ qua
+          console.log(`No review found for booking ${booking._id}`);
+        }
+      }
+      
+      setReviews(reviewsMap);
+    } catch (error) {
+      console.error('Error loading reviews:', error);
     }
   };
 
@@ -156,6 +198,41 @@ export default function MyBookingsScreen() {
         },
       ]
     );
+  };
+
+  const handleOpenReview = async (booking: Booking) => {
+    setSelectedBookingForReview(booking);
+    
+    // Check if review already exists
+    const existing = reviews[booking._id];
+    if (existing) {
+      setExistingReview(existing);
+    } else {
+      try {
+        const reviewResponse = await apiService.getReviewByBookingId(booking._id);
+        if (reviewResponse.success && reviewResponse.data) {
+          setExistingReview(reviewResponse.data);
+          setReviews(prev => ({ ...prev, [booking._id]: reviewResponse.data }));
+        } else {
+          setExistingReview(null);
+        }
+      } catch (error) {
+        // No review exists
+        setExistingReview(null);
+      }
+    }
+    
+    setShowReviewModal(true);
+  };
+
+  const handleReviewSubmitted = () => {
+    if (selectedBookingForReview) {
+      // Reload reviews for this booking
+      loadReviewsForCompletedBookings([selectedBookingForReview]);
+    }
+    setShowReviewModal(false);
+    setSelectedBookingForReview(null);
+    setExistingReview(null);
   };
 
   const formatDate = (dateString: string) => {
@@ -261,6 +338,19 @@ export default function MyBookingsScreen() {
   };
 
   const hasActiveFilters = createdAtDate || selectedRoomType || searchQuery.trim() || selectedStatus;
+
+  const toggleBookingExpand = (bookingId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedBookings(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(bookingId)) {
+        newSet.delete(bookingId);
+      } else {
+        newSet.add(bookingId);
+      }
+      return newSet;
+    });
+  };
 
   // Calendar helper functions
   const getDaysInMonth = (date: Date) => {
@@ -555,24 +645,49 @@ export default function MyBookingsScreen() {
               const numberOfNights = Math.ceil(
                 (new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 60 * 60 * 24)
               );
+              const isExpanded = expandedBookings.has(booking._id);
 
               return (
+                <View key={booking._id} style={styles.bookingCard}>
+                  {/* Compact Header Bar */}
                 <TouchableOpacity
-                  key={booking._id}
-                  style={styles.bookingCard}
-                  onPress={() => {
-                    router.push({
-                      pathname: '/booking-confirm',
-                      params: {
-                        bookingId: booking._id,
-                      },
-                    });
-                  }}
+                    style={styles.compactHeader}
+                    onPress={() => toggleBookingExpand(booking._id)}
                   activeOpacity={0.7}
                 >
-                  {/* Header Section */}
-                  <View style={styles.bookingHeader}>
-                    <View style={styles.bookingHeaderTop}>
+                    <View style={styles.compactHeaderLeft}>
+                      <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(booking.status) }]} />
+                      <View style={styles.compactInfo}>
+                        <ThemedText style={styles.compactHomestayName} numberOfLines={1}>
+                          {booking.homestay.name}
+                        </ThemedText>
+                        <View style={styles.compactMeta}>
+                          <Ionicons name="calendar-outline" size={12} color="#64748b" />
+                          <ThemedText style={styles.compactMetaText}>
+                            {formatDate(booking.checkIn)}
+                          </ThemedText>
+                          <View style={styles.compactMetaDivider} />
+                          <ThemedText style={styles.compactNights}>{numberOfNights} đêm</ThemedText>
+                        </View>
+                      </View>
+                    </View>
+                    <View style={styles.compactHeaderRight}>
+                      <ThemedText style={styles.compactPrice}>
+                        {formatPrice(booking.totalPrice)}₫
+                      </ThemedText>
+                      <Ionicons 
+                        name={isExpanded ? "chevron-up" : "chevron-down"} 
+                        size={20} 
+                        color="#0a7ea4" 
+                      />
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Expanded Details */}
+                  {isExpanded && (
+                    <View style={styles.expandedContent}>
+                      {/* Status & Metadata */}
+                      <View style={styles.expandedHeader}>
                       <View style={[styles.statusBadge, { borderLeftColor: getStatusColor(booking.status) }]}>
                         <View style={[styles.statusDot, { backgroundColor: getStatusColor(booking.status) }]} />
                         <ThemedText style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
@@ -589,7 +704,6 @@ export default function MyBookingsScreen() {
                           <ThemedText style={styles.bookingDate}>
                             {formatDate(booking.createdAt)}
                           </ThemedText>
-                        </View>
                       </View>
                     </View>
                   </View>
@@ -666,28 +780,73 @@ export default function MyBookingsScreen() {
                       </ThemedText>
                     </View>
 
-                    {booking.status === 'pending' && (
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.cancelButton]}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleCancelBooking(booking._id);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <LinearGradient
-                          colors={['#ef4444', '#dc2626']}
-                          style={styles.cancelButtonGradient}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
+                    <View style={styles.actionButtonsContainer}>
+                      {booking.status === 'pending' && (
+                        <TouchableOpacity
+                          style={[styles.actionButton, styles.cancelButton]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleCancelBooking(booking._id);
+                          }}
+                          activeOpacity={0.8}
                         >
-                          <Ionicons name="close-circle" size={16} color="#fff" />
-                          <ThemedText style={styles.actionButtonText}>Hủy đơn</ThemedText>
-                        </LinearGradient>
-                      </TouchableOpacity>
-                    )}
+                          <LinearGradient
+                            colors={['#ef4444', '#dc2626']}
+                            style={styles.cancelButtonGradient}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                          >
+                            <Ionicons name="close-circle" size={16} color="#fff" />
+                            <ThemedText style={styles.actionButtonText}>Hủy đơn</ThemedText>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      )}
+                      
+                      {booking.status === 'completed' && (
+                        <TouchableOpacity
+                          style={[styles.actionButton, styles.reviewButton]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleOpenReview(booking);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <LinearGradient
+                            colors={['#8b5cf6', '#a78bfa']}
+                            style={styles.reviewButtonGradient}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                          >
+                            <Ionicons name={reviews[booking._id] ? "create-outline" : "star"} size={16} color="#fff" />
+                            <ThemedText style={styles.actionButtonText}>
+                              {reviews[booking._id] ? 'Chỉnh sửa đánh giá' : 'Đánh giá'}
+                            </ThemedText>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
+
+                      {/* View Full Details Button */}
+                      <TouchableOpacity
+                        style={styles.viewDetailsButton}
+                        onPress={() => {
+                          router.push({
+                            pathname: '/booking-confirm',
+                            params: {
+                              bookingId: booking._id,
+                            },
+                          });
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="document-text-outline" size={16} color="#0a7ea4" />
+                        <ThemedText style={styles.viewDetailsButtonText}>Xem chi tiết đầy đủ</ThemedText>
+                        <Ionicons name="arrow-forward" size={16} color="#0a7ea4" />
                 </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
               );
             })}
 
@@ -964,6 +1123,23 @@ export default function MyBookingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Review Modal */}
+      {selectedBookingForReview && (
+        <ReviewModal
+          visible={showReviewModal}
+          onClose={() => {
+            setShowReviewModal(false);
+            setSelectedBookingForReview(null);
+            setExistingReview(null);
+          }}
+          bookingId={selectedBookingForReview._id}
+          homestayName={selectedBookingForReview.homestay.name}
+          existingReview={existingReview}
+          readonly={!!existingReview} // Không cho chỉnh sửa nếu đã có review
+          onReviewSubmitted={handleReviewSubmitted}
+        />
+      )}
     </View>
   );
 }
@@ -1532,8 +1708,7 @@ const styles = StyleSheet.create({
   bookingCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     shadowColor: '#0a7ea4',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -1541,15 +1716,96 @@ const styles = StyleSheet.create({
     elevation: 3,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    overflow: 'hidden',
   },
-  bookingHeader: {
-    marginBottom: 16,
+  compactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    gap: 12,
   },
-  bookingHeaderTop: {
+  compactHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  statusIndicator: {
+    width: 4,
+    height: 48,
+    borderRadius: 2,
+  },
+  compactInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  compactHomestayName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#11181C',
+  },
+  compactMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  compactMetaText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  compactMetaDivider: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#cbd5e1',
+  },
+  compactNights: {
+    fontSize: 12,
+    color: '#0a7ea4',
+    fontWeight: '700',
+  },
+  compactHeaderRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  compactPrice: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#f97316',
+  },
+  expandedContent: {
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+  },
+  expandedHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    marginBottom: 16,
     gap: 12,
+  },
+  viewDetailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#0a7ea4',
+    marginTop: 12,
+  },
+  viewDetailsButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0a7ea4',
   },
   bookingMetaInfo: {
     flexDirection: 'row',
@@ -1608,12 +1864,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   bookingSection: {
-    marginBottom: 14,
-    backgroundColor: '#fafbfc',
-    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1687,6 +1943,11 @@ const styles = StyleSheet.create({
     color: '#f97316',
     letterSpacing: 0.3,
   },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
   actionButton: {
     borderRadius: 14,
     overflow: 'hidden',
@@ -1695,9 +1956,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
+    flex: 1,
+    minWidth: 120,
   },
   cancelButton: {
     backgroundColor: 'transparent',
+  },
+  reviewButton: {
+    backgroundColor: 'transparent',
+    shadowColor: '#8b5cf6',
   },
   cancelButtonGradient: {
     flexDirection: 'row',
@@ -1713,7 +1980,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
-  cancelButtonGradient: {
+  reviewButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

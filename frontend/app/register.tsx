@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   StyleSheet,
   TextInput,
@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +22,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { apiService } from '@/services/api';
 
 export default function RegisterScreen() {
   const [formData, setFormData] = useState({
@@ -27,12 +30,18 @@ export default function RegisterScreen() {
     email: '',
     password: '',
     confirmPassword: '',
+    phone: '',
     avatar: '',
   });
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [step, setStep] = useState<'form' | 'otp'>('form'); // 'form' or 'otp'
+  const [otpCode, setOtpCode] = useState(['', '', '', '', '', '']);
+  const [otpEmail, setOtpEmail] = useState('');
+  const [countdown, setCountdown] = useState(0);
+  const otpInputRefs = useRef<(TextInput | null)[]>([]);
   const { register } = useAuth();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -138,23 +147,42 @@ export default function RegisterScreen() {
   };
 
   const validateForm = () => {
+    // Validate username
     if (!formData.username.trim()) {
       Alert.alert('Lỗi', 'Vui lòng nhập username');
       return false;
     }
-    if (formData.username.length < 3) {
+    if (formData.username.trim().length < 3) {
       Alert.alert('Lỗi', 'Username phải có ít nhất 3 ký tự');
       return false;
     }
+    if (formData.username.trim().length > 30) {
+      Alert.alert('Lỗi', 'Username không được vượt quá 30 ký tự');
+      return false;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(formData.username.trim())) {
+      Alert.alert('Lỗi', 'Username chỉ được chứa chữ cái, số và dấu gạch dưới');
+      return false;
+    }
+
+    // Validate email
     if (!formData.email.trim()) {
       Alert.alert('Lỗi', 'Vui lòng nhập email');
       return false;
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
+    if (!emailRegex.test(formData.email.trim())) {
       Alert.alert('Lỗi', 'Email không hợp lệ');
       return false;
     }
+
+    // Validate phone (optional but must be valid if provided)
+    if (formData.phone.trim() && !/^[0-9]{10,11}$/.test(formData.phone.trim())) {
+      Alert.alert('Lỗi', 'Số điện thoại không hợp lệ (10-11 chữ số)');
+      return false;
+    }
+
+    // Validate password
     if (!formData.password.trim()) {
       Alert.alert('Lỗi', 'Vui lòng nhập mật khẩu');
       return false;
@@ -167,10 +195,11 @@ export default function RegisterScreen() {
       Alert.alert('Lỗi', 'Mật khẩu xác nhận không khớp');
       return false;
     }
+
     return true;
   };
 
-  const handleRegister = async () => {
+  const handleSendOTP = async () => {
     if (!validateForm()) {
       return;
     }
@@ -181,19 +210,149 @@ export default function RegisterScreen() {
         username: formData.username.trim(),
         email: formData.email.trim().toLowerCase(),
         password: formData.password,
+        phone: formData.phone.trim() || undefined,
         avatar: formData.avatar || undefined,
-        roleName: 'user' as 'user' | 'host', // Mặc định là user
+        roleName: 'user' as 'user' | 'host',
       };
 
-      await register(registerData);
-      Alert.alert('Thành công', 'Đăng ký thành công!', [
-        {
-          text: 'OK',
-          onPress: () => router.replace('/(tabs)'),
-        },
-      ]);
+      const response = await apiService.sendRegistrationOTP(registerData);
+      
+      if (response.success) {
+        setOtpEmail(registerData.email);
+        setStep('otp');
+        setCountdown(60); // 60 seconds countdown
+        // Start countdown timer
+        const timer = setInterval(() => {
+          setCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(timer);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+        Alert.alert('Thành công', 'Mã xác thực đã được gửi đến email của bạn!');
+      } else {
+        throw new Error(response.message || 'Không thể gửi mã xác thực');
+      }
     } catch (error: any) {
-      Alert.alert('Đăng ký thất bại', error.message || 'Vui lòng thử lại');
+      Alert.alert('Lỗi', error.message || 'Vui lòng thử lại');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    if (countdown > 0) {
+      Alert.alert('Vui lòng đợi', `Vui lòng đợi ${countdown} giây trước khi gửi lại mã.`);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await apiService.resendOTP(otpEmail);
+      if (response.success) {
+        setCountdown(60);
+        const timer = setInterval(() => {
+          setCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(timer);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+        Alert.alert('Thành công', 'Mã xác thực mới đã được gửi!');
+      } else {
+        throw new Error(response.message || 'Không thể gửi lại mã xác thực');
+      }
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message || 'Vui lòng thử lại');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOTPChange = (index: number, value: string) => {
+    // Xử lý paste nhiều ký tự
+    if (value.length > 1) {
+      const digits = value.replace(/\D/g, '').slice(0, 6);
+      const newOtpCode = [...otpCode];
+      digits.split('').forEach((digit, i) => {
+        if (index + i < 6) {
+          newOtpCode[index + i] = digit;
+        }
+      });
+      setOtpCode(newOtpCode);
+      
+      // Focus vào input cuối cùng được điền
+      const lastFilledIndex = Math.min(index + digits.length - 1, 5);
+      if (otpInputRefs.current[lastFilledIndex]) {
+        otpInputRefs.current[lastFilledIndex]?.focus();
+      }
+      return;
+    }
+    
+    // Chỉ cho phép số
+    if (value && !/^\d$/.test(value)) {
+      return;
+    }
+
+    const newOtpCode = [...otpCode];
+    newOtpCode[index] = value;
+    setOtpCode(newOtpCode);
+
+    // Auto focus next input
+    if (value && index < 5) {
+      setTimeout(() => {
+        otpInputRefs.current[index + 1]?.focus();
+      }, 50);
+    }
+  };
+
+  const handleOTPKeyPress = (index: number, key: string) => {
+    // Xử lý backspace để focus về input trước
+    if (key === 'Backspace' && !otpCode[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    const fullOtp = otpCode.join('');
+    
+    if (fullOtp.length !== 6) {
+      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ 6 chữ số');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await apiService.verifyOTP(otpEmail, fullOtp);
+      
+      if (response.success && response.data) {
+        // Lưu token
+        apiService.setToken(response.data.token);
+        
+        // Lưu token vào storage
+        if (Platform.OS === 'web') {
+          await AsyncStorage.setItem('auth_token', response.data.token);
+        } else {
+          await SecureStore.setItemAsync('auth_token', response.data.token);
+        }
+        
+        Alert.alert('Thành công', 'Đăng ký thành công!', [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(tabs)'),
+          },
+        ]);
+      } else {
+        throw new Error(response.message || 'Mã xác thực không đúng');
+      }
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message || 'Mã xác thực không đúng. Vui lòng thử lại.');
+      // Reset OTP inputs
+      setOtpCode(['', '', '', '', '', '']);
     } finally {
       setIsLoading(false);
     }
@@ -305,6 +464,28 @@ export default function RegisterScreen() {
             <View style={styles.inputContainer}>
               <View style={styles.inputWrapper}>
                 <Ionicons
+                  name="call-outline"
+                  size={20}
+                  color={colors.icon}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  placeholder="Số điện thoại (tùy chọn)"
+                  placeholderTextColor={colors.icon}
+                  value={formData.phone}
+                  onChangeText={(value) => handleChange('phone', value)}
+                  keyboardType="phone-pad"
+                  autoCapitalize="none"
+                  autoComplete="tel"
+                  editable={!isLoading}
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputContainer}>
+              <View style={styles.inputWrapper}>
+                <Ionicons
                   name="lock-closed-outline"
                   size={20}
                   color={colors.icon}
@@ -371,7 +552,7 @@ export default function RegisterScreen() {
                 styles.button,
                 isLoading && styles.buttonDisabled,
               ]}
-              onPress={handleRegister}
+              onPress={handleSendOTP}
               disabled={isLoading}
             >
               <LinearGradient
@@ -383,7 +564,7 @@ export default function RegisterScreen() {
                 {isLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <ThemedText style={styles.buttonText}>Đăng Ký</ThemedText>
+                  <ThemedText style={styles.buttonText}>Gửi Mã Xác Thực</ThemedText>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -409,6 +590,91 @@ export default function RegisterScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* OTP Verification Screen */}
+      {step === 'otp' && (
+        <View style={styles.otpOverlay}>
+          <View style={styles.otpContainer}>
+            <TouchableOpacity
+              style={styles.otpBackButton}
+              onPress={() => {
+                setStep('form');
+                setOtpCode(['', '', '', '', '', '']);
+                setCountdown(0);
+              }}
+            >
+              <Ionicons name="arrow-back" size={22} color="#0a7ea4" />
+            </TouchableOpacity>
+
+            <ThemedText style={styles.otpTitle}>Xác Thực Email</ThemedText>
+            
+            <View style={styles.otpEmailContainer}>
+              <ThemedText style={styles.otpSubtitle}>
+                Chúng tôi đã gửi mã xác thực đến:
+              </ThemedText>
+              <ThemedText style={styles.otpEmail} numberOfLines={1} ellipsizeMode="middle">
+                {otpEmail}
+              </ThemedText>
+            </View>
+
+            <View style={styles.otpInputContainer}>
+              {otpCode.map((digit, index) => (
+                <TextInput
+                  key={index}
+                  ref={(ref) => {
+                    otpInputRefs.current[index] = ref;
+                  }}
+                  style={[
+                    styles.otpInput,
+                    digit && styles.otpInputFilled,
+                    { color: colors.text, borderColor: digit ? '#0a7ea4' : colors.icon }
+                  ]}
+                  value={digit}
+                  onChangeText={(value) => handleOTPChange(index, value)}
+                  onKeyPress={({ nativeEvent }) => handleOTPKeyPress(index, nativeEvent.key)}
+                  keyboardType="number-pad"
+                  maxLength={1}
+                  selectTextOnFocus
+                  editable={!isLoading}
+                />
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.resendButton}
+              onPress={handleResendOTP}
+              disabled={countdown > 0 || isLoading}
+            >
+              <ThemedText style={[styles.resendText, countdown > 0 && styles.resendTextDisabled]}>
+                {countdown > 0 ? `Gửi lại sau ${countdown}s` : 'Gửi lại mã'}
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.button,
+                isLoading && styles.buttonDisabled,
+                styles.verifyButton,
+              ]}
+              onPress={handleVerifyOTP}
+              disabled={isLoading}
+            >
+              <LinearGradient
+                colors={['#0a7ea4', '#0d8bb8']}
+                style={styles.buttonGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <ThemedText style={styles.buttonText}>Xác Thực</ThemedText>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -594,5 +860,105 @@ const styles = StyleSheet.create({
   loginButtonText: {
     fontSize: 15,
     color: '#666',
+  },
+  otpOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    padding: 20,
+  },
+  otpContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  otpBackButton: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    padding: 6,
+    zIndex: 1,
+  },
+  otpTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#11181C',
+    marginTop: 4,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  otpEmailContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 12,
+  },
+  otpSubtitle: {
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 6,
+    lineHeight: 18,
+  },
+  otpEmail: {
+    fontWeight: '700',
+    color: '#0a7ea4',
+    fontSize: 14,
+    textAlign: 'center',
+    maxWidth: '100%',
+  },
+  otpInputContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    width: '100%',
+    marginBottom: 20,
+    gap: 8,
+    paddingHorizontal: 8,
+  },
+  otpInput: {
+    width: 44,
+    height: 52,
+    borderWidth: 2,
+    borderRadius: 10,
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '700',
+    backgroundColor: '#f8fafc',
+    borderColor: '#e0e0e0',
+  },
+  otpInputFilled: {
+    borderColor: '#0a7ea4',
+    backgroundColor: '#f0f9ff',
+  },
+  resendButton: {
+    marginBottom: 16,
+    paddingVertical: 4,
+  },
+  resendText: {
+    fontSize: 13,
+    color: '#0a7ea4',
+    fontWeight: '600',
+  },
+  resendTextDisabled: {
+    color: '#999',
+  },
+  verifyButton: {
+    width: '100%',
+    marginTop: 4,
   },
 });

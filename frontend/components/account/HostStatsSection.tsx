@@ -197,7 +197,7 @@ export function HostStatsSection({ user }: HostStatsSectionProps) {
         {/* Total Homestays */}
         <View style={styles.mainStatCard}>
           <LinearGradient
-            colors={['#0a7ea4', '#0d8bb8', '#10a5c7']}
+            colors={['#0d8bb8', '#10a5c7', '#14b8d4']}
             style={styles.mainStatGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -217,7 +217,7 @@ export function HostStatsSection({ user }: HostStatsSectionProps) {
         {/* Total Bookings */}
         <View style={styles.mainStatCard}>
           <LinearGradient
-            colors={['#10a5c7', '#14b8d4', '#22d3ee']}
+            colors={['#14b8d4', '#22d3ee', '#38bdf8']}
             style={styles.mainStatGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -237,7 +237,7 @@ export function HostStatsSection({ user }: HostStatsSectionProps) {
         {/* Monthly Revenue */}
         <View style={styles.mainStatCard}>
           <LinearGradient
-            colors={['#10b981', '#059669', '#047857']}
+            colors={['#22c55e', '#16a34a', '#15803d']}
             style={styles.mainStatGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -259,7 +259,7 @@ export function HostStatsSection({ user }: HostStatsSectionProps) {
         {/* Active Bookings */}
         <View style={styles.mainStatCard}>
           <LinearGradient
-            colors={['#f59e0b', '#f97316', '#ea580c']}
+            colors={['#fbbf24', '#f59e0b', '#f97316']}
             style={styles.mainStatGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -282,7 +282,7 @@ export function HostStatsSection({ user }: HostStatsSectionProps) {
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 24,
+    marginBottom: 20,
     paddingHorizontal: 0,
   },
   loadingContainer: {
@@ -293,46 +293,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     color: '#11181C',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   viewDetailsButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     backgroundColor: '#e0f2fe',
-    borderRadius: 20,
+    borderRadius: 16,
   },
   viewDetailsText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#0a7ea4',
   },
   mainStatsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
+    gap: 12,
   },
   mainStatCard: {
     width: '47%',
-    borderRadius: 20,
+    borderRadius: 16,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 5,
   },
   mainStatGradient: {
-    padding: 20,
-    minHeight: 140,
+    padding: 18,
+    minHeight: 130,
     justifyContent: 'space-between',
   },
   mainStatHeader: {
@@ -341,31 +341,31 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   mainStatContent: {
-    marginTop: 8,
+    marginTop: 6,
   },
   mainStatValue: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
     color: '#fff',
-    marginBottom: 6,
-    letterSpacing: -0.5,
+    marginBottom: 4,
+    letterSpacing: -0.3,
   },
   mainStatLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#fff',
-    opacity: 0.95,
-    letterSpacing: 0.2,
+    opacity: 0.98,
+    letterSpacing: 0.1,
   },
 });
 

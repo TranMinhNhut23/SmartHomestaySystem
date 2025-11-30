@@ -22,7 +22,7 @@ class UploadService {
       // Tạo tên file
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
       const filename = `avatar-${userId}-${uniqueSuffix}.${imageType}`;
-      const uploadDir = path.join(__dirname, '../uploads/avatars');
+      const uploadDir = path.join(__dirname, '../../uploads/avatars');
 
       // Tạo thư mục nếu chưa có
       if (!fs.existsSync(uploadDir)) {
@@ -54,7 +54,7 @@ class UploadService {
         actualFilename = path.basename(filename);
       }
 
-      const uploadDir = path.join(__dirname, '../uploads/avatars');
+      const uploadDir = path.join(__dirname, '../../uploads/avatars');
       const filePath = path.join(uploadDir, actualFilename);
 
       if (fs.existsSync(filePath)) {
@@ -296,6 +296,173 @@ class UploadService {
 
     // Trả về URL relative
     return `/uploads/idcards/${filename}`;
+  }
+
+  // Lưu base64 image cho chat message
+  async saveChatImage(base64String, userId, chatId) {
+    try {
+      // Kiểm tra nếu không phải base64 image
+      if (!base64String || !base64String.startsWith('data:image')) {
+        throw new Error('Base64 string không hợp lệ');
+      }
+
+      // Parse base64 string
+      const matches = base64String.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+      if (!matches || matches.length !== 3) {
+        throw new Error('Base64 string không hợp lệ');
+      }
+
+      const imageType = matches[1];
+      const base64Data = matches[2];
+
+      // Validate image type
+      const allowedTypes = ['jpeg', 'jpg', 'png', 'gif', 'webp'];
+      if (!allowedTypes.includes(imageType.toLowerCase())) {
+        throw new Error(`Định dạng ảnh ${imageType} không được hỗ trợ`);
+      }
+
+      // Validate size (max 5MB)
+      const sizeInMB = (base64Data.length * 3) / 4 / 1024 / 1024;
+      if (sizeInMB > 5) {
+        throw new Error(`Ảnh quá lớn (${sizeInMB.toFixed(2)}MB). Tối đa 5MB`);
+      }
+
+      // Tạo tên file
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const filename = `chat-${chatId || 'temp'}-${userId}-${uniqueSuffix}.${imageType}`;
+      const uploadDir = path.join(__dirname, '../../uploads/chat');
+
+      // Tạo thư mục nếu chưa có
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      const filePath = path.join(uploadDir, filename);
+
+      // Convert base64 sang buffer và lưu file
+      const buffer = Buffer.from(base64Data, 'base64');
+      fs.writeFileSync(filePath, buffer);
+
+      // Trả về URL relative
+      return `/uploads/chat/${filename}`;
+    } catch (error) {
+      console.error('Error saving chat image:', error);
+      throw new Error('Không thể lưu ảnh: ' + error.message);
+    }
+  }
+
+  getChatImageUrl(filename) {
+    if (!filename) return null;
+    
+    // Nếu đã là full URL, trả về nguyên
+    if (filename.startsWith('http') || filename.startsWith('data:image')) {
+      return filename;
+    }
+    
+    // Nếu là relative URL, trả về nguyên
+    if (filename.startsWith('/uploads/chat/')) {
+      return filename;
+    }
+    
+    return `/uploads/chat/${filename}`;
+  }
+
+  // Lưu nhiều base64 images cho review
+  async saveMultipleReviewImages(base64Images, userId) {
+    try {
+      if (!Array.isArray(base64Images) || base64Images.length === 0) {
+        return [];
+      }
+
+      const savedImages = [];
+      // Sử dụng đường dẫn từ root của backend
+      // __dirname = backend/src/services, nên ../../uploads/reviews = backend/uploads/reviews
+      const uploadDir = path.join(__dirname, '../../uploads/reviews');
+
+      // Tạo thư mục nếu chưa có
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+        console.log('Created review upload directory:', uploadDir);
+      }
+      
+      console.log('Saving review images to directory:', uploadDir);
+
+      for (let i = 0; i < base64Images.length; i++) {
+        const base64String = base64Images[i];
+        
+        // Kiểm tra nếu không phải base64 image
+        if (!base64String || !base64String.startsWith('data:image')) {
+          console.warn(`Review image ${i + 1} is not base64, skipping`);
+          continue;
+        }
+
+        // Parse base64 string
+        const matches = base64String.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+        if (!matches || matches.length !== 3) {
+          console.warn(`Review image ${i + 1}: Base64 string không hợp lệ, bỏ qua`);
+          continue;
+        }
+
+        const imageType = matches[1];
+        const base64Data = matches[2];
+
+        // Validate image type
+        const allowedTypes = ['jpeg', 'jpg', 'png', 'gif', 'webp'];
+        if (!allowedTypes.includes(imageType.toLowerCase())) {
+          console.warn(`Review image ${i + 1}: Định dạng ảnh ${imageType} không được hỗ trợ, bỏ qua`);
+          continue;
+        }
+
+        // Validate size (max 5MB)
+        const sizeInMB = (base64Data.length * 3) / 4 / 1024 / 1024;
+        if (sizeInMB > 5) {
+          console.warn(`Review image ${i + 1}: Ảnh quá lớn (${sizeInMB.toFixed(2)}MB), bỏ qua`);
+          continue;
+        }
+
+        // Tạo tên file
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const filename = `review-${userId || 'temp'}-${uniqueSuffix}.${imageType}`;
+        const filePath = path.join(uploadDir, filename);
+
+        // Convert base64 sang buffer và lưu file
+        const buffer = Buffer.from(base64Data, 'base64');
+        fs.writeFileSync(filePath, buffer);
+        
+        // Verify file was saved
+        if (!fs.existsSync(filePath)) {
+          console.error('Failed to save review file:', filePath);
+          continue;
+        }
+        
+        console.log('✓ Saved review image:', filename);
+        console.log('  Path:', filePath);
+        console.log('  Size:', (buffer.length / 1024).toFixed(2), 'KB');
+
+        // Lưu URL relative để frontend có thể sử dụng
+        // Format: /uploads/reviews/filename
+        const imageUrl = `/uploads/reviews/${filename}`;
+        savedImages.push(imageUrl);
+      }
+
+      return savedImages;
+    } catch (error) {
+      console.error('Error saving multiple review images:', error);
+      throw new Error('Không thể lưu ảnh đánh giá');
+    }
+  }
+
+  // Lấy URL của ảnh review
+  getReviewImageUrl(filename) {
+    if (!filename) return null;
+
+    // Nếu đã là URL đầy đủ hoặc base64, trả về nguyên
+    if (filename.startsWith('http') || filename.startsWith('data:image')) {
+      return filename;
+    }
+
+    // Trả về URL relative
+    return `/uploads/reviews/${filename}`;
   }
 }
 

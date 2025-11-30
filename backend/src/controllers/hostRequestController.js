@@ -1,4 +1,5 @@
 const hostRequestService = require('../services/hostRequestService');
+const notificationService = require('../services/notificationService');
 
 class HostRequestController {
   // Tạo yêu cầu trở thành host
@@ -118,6 +119,20 @@ class HostRequestController {
       const { id } = req.params;
       const adminId = req.user._id;
       const result = await hostRequestService.approveHostRequest(id, adminId);
+      
+      // Tạo notification cho user
+      try {
+        const request = result.data;
+        const userId = typeof request.userId === 'object' 
+          ? request.userId._id || request.userId 
+          : request.userId;
+        if (userId) {
+          await notificationService.notifyHostRequestApproved(userId.toString());
+        }
+      } catch (notifError) {
+        console.error('Error creating host request approval notification:', notifError);
+      }
+      
       res.json(result);
     } catch (error) {
       console.error('Error in approveHostRequest:', error);
@@ -135,6 +150,20 @@ class HostRequestController {
       const adminId = req.user._id;
       const { reason } = req.body;
       const result = await hostRequestService.rejectHostRequest(id, adminId, reason || '');
+      
+      // Tạo notification cho user
+      try {
+        const request = result.data;
+        const userId = typeof request.userId === 'object' 
+          ? request.userId._id || request.userId 
+          : request.userId;
+        if (userId) {
+          await notificationService.notifyHostRequestRejected(userId.toString(), reason || '');
+        }
+      } catch (notifError) {
+        console.error('Error creating host request rejection notification:', notifError);
+      }
+      
       res.json(result);
     } catch (error) {
       console.error('Error in rejectHostRequest:', error);

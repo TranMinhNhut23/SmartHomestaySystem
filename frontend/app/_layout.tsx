@@ -7,6 +7,10 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { HomestayFormProvider } from '@/contexts/HomestayFormContext';
 import { BookingProvider } from '@/contexts/BookingContext';
+import { WalletProvider } from '@/contexts/WalletContext';
+import { ChatProvider } from '@/contexts/ChatContext';
+import { NotificationProvider } from '@/contexts/NotificationContext';
+import { ChatUnreadProvider } from '@/contexts/ChatUnreadContext';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -17,9 +21,13 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <HomestayFormProvider>
-        <BookingProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <NotificationProvider>
+        <ChatUnreadProvider>
+          <ChatProvider>
+            <WalletProvider>
+              <HomestayFormProvider>
+                <BookingProvider>
+                <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen 
@@ -131,7 +139,32 @@ export default function RootLayout() {
               name="admin-pending-homestays" 
               options={{ 
                 presentation: 'modal',
-                headerShown: false 
+                headerShown: false,
+                title: ''
+              }} 
+            />
+            <Stack.Screen 
+              name="admin-users" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false,
+                title: ''
+              }} 
+            />
+            <Stack.Screen 
+              name="admin-host-requests" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false,
+                title: ''
+              }} 
+            />
+            <Stack.Screen 
+              name="admin-statistics" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false,
+                title: ''
               }} 
             />
             <Stack.Screen 
@@ -148,12 +181,58 @@ export default function RootLayout() {
                 headerShown: false 
               }} 
             />
+            <Stack.Screen 
+              name="wallet" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false 
+              }} 
+            />
+            <Stack.Screen 
+              name="wallet-deposit" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false 
+              }} 
+            />
+            <Stack.Screen 
+              name="wallet-transactions" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false 
+              }} 
+            />
+            <Stack.Screen 
+              name="wallet-withdraw" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false 
+              }} 
+            />
+            <Stack.Screen 
+              name="wallet-deposit-result" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false 
+              }} 
+            />
+            <Stack.Screen 
+              name="edit-profile" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false 
+              }} 
+            />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
-          <StatusBar style="auto" />
-        </ThemeProvider>
-        </BookingProvider>
-      </HomestayFormProvider>
+            <StatusBar style="auto" />
+          </ThemeProvider>
+                </BookingProvider>
+              </HomestayFormProvider>
+            </WalletProvider>
+          </ChatProvider>
+        </ChatUnreadProvider>
+      </NotificationProvider>
     </AuthProvider>
   );
 }

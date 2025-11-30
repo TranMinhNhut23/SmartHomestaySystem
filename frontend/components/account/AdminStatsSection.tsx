@@ -46,76 +46,45 @@ export function AdminStatsSection({ user }: AdminStatsSectionProps) {
     try {
       setIsLoading(true);
       
-      // Fetch pending homestays
-      const pendingRes = await apiService.getPendingHomestays({ limit: 1000 });
-      const pendingHomestays = pendingRes.success 
-        ? (Array.isArray(pendingRes.data) ? pendingRes.data.length : 0)
-        : 0;
-
-      // Fetch all homestays (we'll use getAllHomestays which should work for admin)
-      const homestaysRes = await apiService.getAllHomestays({ limit: 1000 });
-      const allHomestays = homestaysRes.success 
-        ? (Array.isArray(homestaysRes.data) ? homestaysRes.data.length : 
-           Array.isArray(homestaysRes.data?.homestays) ? homestaysRes.data.homestays.length : 0)
-        : 0;
-
-      // For now, we'll estimate users/hosts from homestays data
-      // In a real app, you'd have admin endpoints for these stats
-      const totalUsers = 0; // TODO: Add admin endpoint to get total users
-      const totalHosts = 0; // TODO: Add admin endpoint to get total hosts
-
-      // Fetch bookings using admin endpoint
-      let bookings: any[] = [];
-      let totalBookings = 0;
-      let pendingBookings = 0;
-      let totalRevenue = 0;
-      let monthlyRevenue = 0;
-
-      try {
-        const bookingsRes = await apiService.getAllBookings({ limit: 1000 });
-        if (bookingsRes.success) {
-          bookings = bookingsRes.data?.bookings || bookingsRes.data || [];
-        }
-      } catch (error: any) {
-        console.error('Error loading admin bookings:', error.message);
-        bookings = [];
-      }
+      // Fetch dashboard stats from admin API
+      const statsRes = await apiService.getDashboardStats();
       
-      if (Array.isArray(bookings) && bookings.length > 0) {
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        
-        totalBookings = bookings.length;
-        pendingBookings = bookings.filter((b: any) => b.status === 'pending').length;
-
-        // Calculate revenue
-        const confirmedCompletedBookings = bookings.filter(
-          (b: any) => b.status === 'confirmed' || b.status === 'completed'
-        );
-        totalRevenue = confirmedCompletedBookings.reduce((sum: number, b: any) => {
-          return sum + (b.totalPrice || 0);
-        }, 0);
-
-        // Monthly revenue
-        const monthlyBookingsForRevenue = confirmedCompletedBookings.filter((b: any) => {
-          const bookingDate = b.createdAt ? new Date(b.createdAt) : null;
-          return bookingDate && bookingDate >= startOfMonth;
+      if (statsRes.success && statsRes.data) {
+        const data = statsRes.data;
+        setStats({
+          totalUsers: data.users?.user || 0,
+          totalHosts: data.users?.host || 0,
+          totalHomestays: data.homestays?.total || 0,
+          pendingHomestays: data.homestays?.pending || 0,
+          totalBookings: data.bookings?.total || 0,
+          pendingBookings: data.bookings?.pending || 0,
+          totalRevenue: data.revenue?.total || 0,
+          monthlyRevenue: data.revenue?.monthly || 0,
         });
-        monthlyRevenue = monthlyBookingsForRevenue.reduce((sum: number, b: any) => {
-          return sum + (b.totalPrice || 0);
-        }, 0);
-      }
+      } else {
+        // Fallback to old method if API fails
+        const pendingRes = await apiService.getPendingHomestays({ limit: 1000 });
+        const pendingHomestays = pendingRes.success 
+          ? (Array.isArray(pendingRes.data) ? pendingRes.data.length : 0)
+          : 0;
 
-      setStats({
-        totalUsers,
-        totalHosts,
-        totalHomestays: allHomestays,
-        pendingHomestays,
-        totalBookings,
-        pendingBookings,
-        totalRevenue,
-        monthlyRevenue,
-      });
+        const homestaysRes = await apiService.getAllHomestays({ limit: 1000 });
+        const allHomestays = homestaysRes.success 
+          ? (Array.isArray(homestaysRes.data) ? homestaysRes.data.length : 
+             Array.isArray(homestaysRes.data?.homestays) ? homestaysRes.data.homestays.length : 0)
+          : 0;
+
+        setStats({
+          totalUsers: 0,
+          totalHosts: 0,
+          totalHomestays: allHomestays,
+          pendingHomestays,
+          totalBookings: 0,
+          pendingBookings: 0,
+          totalRevenue: 0,
+          monthlyRevenue: 0,
+        });
+      }
     } catch (error) {
       console.error('Error loading admin stats:', error);
     } finally {

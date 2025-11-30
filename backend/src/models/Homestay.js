@@ -89,6 +89,17 @@ const homestaySchema = new mongoose.Schema({
     enum: ['pending', 'active', 'inactive', 'rejected'],
     default: 'pending'
   },
+  averageRating: {
+    type: Number,
+    min: [0, 'Đánh giá trung bình phải lớn hơn hoặc bằng 0'],
+    max: [5, 'Đánh giá trung bình không được vượt quá 5'],
+    default: null
+  },
+  reviewCount: {
+    type: Number,
+    min: [0, 'Số lượng đánh giá phải lớn hơn hoặc bằng 0'],
+    default: 0
+  },
   rejectedReason: {
     type: String,
     trim: true,

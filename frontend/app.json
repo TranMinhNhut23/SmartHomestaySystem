@@ -53,7 +53,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-local-authentication"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,4 +1,6 @@
 const homestayService = require('../services/homestayService');
+const notificationService = require('../services/notificationService');
+const weatherService = require('../services/weatherService');
 
 class HomestayController {
   // Tạo homestay mới
@@ -371,6 +373,14 @@ class HomestayController {
 
       const homestay = await homestayService.approveHomestay(id, adminId);
 
+      // Tạo notification cho host
+      try {
+        const hostId = typeof homestay.host === 'object' ? homestay.host._id : homestay.host;
+        await notificationService.notifyHomestayApproved(id, hostId);
+      } catch (notifError) {
+        console.error('Error creating homestay approval notification:', notifError);
+      }
+
       res.status(200).json({
         success: true,
         message: 'Duyệt homestay thành công',
@@ -409,6 +419,14 @@ class HomestayController {
 
       const homestay = await homestayService.rejectHomestay(id, adminId, reason);
 
+      // Tạo notification cho host
+      try {
+        const hostId = typeof homestay.host === 'object' ? homestay.host._id : homestay.host;
+        await notificationService.notifyHomestayRejected(id, hostId, reason || '');
+      } catch (notifError) {
+        console.error('Error creating homestay rejection notification:', notifError);
+      }
+
       res.status(200).json({
         success: true,
         message: 'Từ chối homestay thành công',
@@ -445,6 +463,86 @@ class HomestayController {
       res.status(500).json({
         success: false,
         message: error.message || 'Không thể lấy danh sách homestay chờ duyệt'
+      });
+    }
+  }
+
+  // Lấy thời tiết cho homestay
+  async getHomestayWeather(req, res) {
+    try {
+      const { id } = req.params;
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID homestay là bắt buộc'
+        });
+      }
+
+      // Validate ObjectId format
+      const mongoose = require('mongoose');
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID homestay không hợp lệ'
+        });
+      }
+
+      // Lấy thông tin homestay
+      const homestay = await homestayService.getHomestayById(id);
+      
+      if (!homestay) {
+        return res.status(404).json({
+          success: false,
+          message: 'Homestay không tồn tại'
+        });
+      }
+
+      // Kiểm tra địa chỉ có đầy đủ không
+      if (!homestay.address || !homestay.address.province || !homestay.address.province.name) {
+        return res.status(400).json({
+          success: false,
+          message: 'Homestay không có thông tin địa chỉ đầy đủ'
+        });
+      }
+
+      // Lấy thời tiết từ địa chỉ
+      const weather = await weatherService.getWeatherByAddress(
+        homestay.address.province.name,
+        homestay.address.district?.name || null,
+        homestay.address.ward?.name || null
+      );
+
+      // Kiểm tra weather data có hợp lệ không
+      if (!weather || !weather.current) {
+        throw new Error('Dữ liệu thời tiết không hợp lệ');
+      }
+
+      // Thêm mô tả thời tiết cho current weather
+      const weatherDescription = weatherService.getWeatherDescription(weather.current.weathercode);
+      
+      // Thêm mô tả thời tiết cho từng ngày trong forecast
+      const forecastWithDescription = weather.forecast ? weather.forecast.map(day => ({
+        ...day,
+        description: day.weathercode ? weatherService.getWeatherDescription(day.weathercode) : null
+      })) : [];
+      
+      const result = {
+        ...weather,
+        description: weatherDescription,
+        forecast: forecastWithDescription
+      };
+
+      res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      console.error('Get homestay weather error:', error);
+      console.error('Error stack:', error.stack);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Không thể lấy thông tin thời tiết'
       });
     }
   }

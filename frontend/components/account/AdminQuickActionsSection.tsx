@@ -22,17 +22,17 @@ export function AdminQuickActionsSection() {
       gradient: ['#0a7ea4', '#0d8bb8'],
     },
     {
+      id: 'host-requests',
+      title: 'Phê Duyệt Yêu Cầu Host',
+      icon: 'person-add',
+      route: '/admin-host-requests',
+      gradient: ['#f59e0b', '#f97316'],
+    },
+    {
       id: 'manage-bookings',
       title: 'Quản Lý Đặt Phòng',
       icon: 'calendar',
       route: '/admin-bookings',
-      gradient: ['#f59e0b', '#f97316'],
-    },
-    {
-      id: 'manage-payments',
-      title: 'Quản Lý Thanh Toán',
-      icon: 'card',
-      route: '/admin-payments',
       gradient: ['#10b981', '#059669'],
     },
     {
