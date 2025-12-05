@@ -1153,6 +1153,42 @@ class ApiService {
       method: 'POST',
     });
   }
+
+  // Admin APIs - System Config
+  async getSystemConfig() {
+    // Public endpoint - không cần authentication
+    return this.request<any>('/system-config', {
+      method: 'GET',
+    });
+  }
+
+  async updateSystemConfig(configData: {
+    homepage?: {
+      bannerImages?: any[];
+      saleEvents?: any[];
+      categories?: any[];
+    };
+    metadata?: any;
+  }) {
+    return this.request<any>('/admin/system-config', {
+      method: 'PUT',
+      body: JSON.stringify(configData),
+    });
+  }
+
+  async updateBannerImages(bannerImages: any[]) {
+    return this.request<any>('/admin/system-config/banner-images', {
+      method: 'PUT',
+      body: JSON.stringify({ bannerImages }),
+    });
+  }
+
+  async updateSaleEvents(saleEvents: any[]) {
+    return this.request<any>('/admin/system-config/sale-events', {
+      method: 'PUT',
+      body: JSON.stringify({ saleEvents }),
+    });
+  }
 }
 
 export const apiService = new ApiService(API_BASE_URL);

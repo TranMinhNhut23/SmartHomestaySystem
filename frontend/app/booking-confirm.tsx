@@ -165,34 +165,6 @@ export default function BookingConfirmScreen() {
     }
   }, [getBookingById]);
 
-  // Reload booking data khi màn hình được focus lại (sau khi quay lại từ payment gateway)
-  useFocusEffect(
-    useCallback(() => {
-      if (currentBookingId && isAuthenticated) {
-        console.log('Screen focused, reloading booking:', currentBookingId);
-        loadBookingFromAPI(currentBookingId);
-      }
-      // Reload wallet balance khi quay lại màn hình (để cập nhật số dư sau khi nạp tiền)
-      if (isAuthenticated) {
-        loadWalletBalance();
-      }
-    }, [currentBookingId, isAuthenticated, loadBookingFromAPI, loadWalletBalance])
-  );
-
-  // Reload booking khi app trở lại foreground (sau khi thanh toán)
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active' && currentBookingId && isAuthenticated) {
-        console.log('App became active, reloading booking:', currentBookingId);
-        loadBookingFromAPI(currentBookingId);
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [currentBookingId, isAuthenticated, loadBookingFromAPI]);
-
   // Load wallet balance
   const loadWalletBalance = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -353,7 +325,7 @@ export default function BookingConfirmScreen() {
       }
 
       // Tạo booking trước (với paymentMethod = null, paymentStatus = pending)
-      const bookingPayload = {
+      const bookingPayload: any = {
         homestayId: displayBooking.homestayId,
         roomId: displayBooking.roomId,
         checkIn: displayBooking.checkIn,
@@ -361,8 +333,12 @@ export default function BookingConfirmScreen() {
         numberOfGuests: displayBooking.numberOfGuests,
         guestInfo: displayBooking.guestInfo,
         paymentMethod: selectedPaymentMethod,
-        couponCode: displayBooking.couponCode || null,
       };
+
+      // Chỉ thêm couponCode nếu có giá trị
+      if (displayBooking.couponCode && displayBooking.couponCode.trim()) {
+        bookingPayload.couponCode = displayBooking.couponCode.trim();
+      }
 
       console.log('Creating booking with payment method:', bookingPayload);
 

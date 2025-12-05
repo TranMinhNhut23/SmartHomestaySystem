@@ -786,7 +786,7 @@ export default function BookingScreen() {
       totalPrice: totalPrice,
       originalPrice: calculateOriginalPrice(),
       discountAmount: appliedCoupon?.discountAmount || 0,
-      couponCode: appliedCoupon?.code || null,
+      couponCode: appliedCoupon?.code && appliedCoupon.code.trim() ? appliedCoupon.code.trim() : null,
       homestay: homestay,
       room: selectedRoom,
     };

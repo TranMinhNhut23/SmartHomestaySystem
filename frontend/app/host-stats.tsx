@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiService } from '@/services/api';
 import { HostStatsCharts } from '@/components/account/HostStatsCharts';
+import { HostRevenueStats } from '@/components/account/HostRevenueStats';
 
 interface Stats {
   totalHomestays: number;
@@ -47,6 +48,9 @@ export default function HostStatsScreen() {
     Array<{ month: string; bookings: number; revenue: number }>
   >([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [homestays, setHomestays] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'overview' | 'revenue'>('overview');
 
   useEffect(() => {
     loadStats();
@@ -79,9 +83,14 @@ export default function HostStatsScreen() {
 
       // Fetch bookings
       const bookingsRes = await apiService.getHostBookings({ limit: 1000 });
-      const bookings = bookingsRes.success
+      const bookingsData = bookingsRes.success
         ? (bookingsRes.data?.bookings || bookingsRes.data || [])
         : [];
+      
+      setBookings(bookingsData);
+      setHomestays(homestays);
+      
+      const bookings = bookingsData;
 
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -117,18 +126,18 @@ export default function HostStatsScreen() {
           }).length
         : 0;
 
-      // Calculate revenue
-      const confirmedCompletedBookings = Array.isArray(bookings)
+      // Calculate revenue - chỉ tính các booking đã thanh toán
+      const paidBookings = Array.isArray(bookings)
         ? bookings.filter(
-            (b: any) => b.status === 'confirmed' || b.status === 'completed'
+            (b: any) => b.paymentStatus === 'paid'
           )
         : [];
-      const totalRevenue = confirmedCompletedBookings.reduce((sum: number, b: any) => {
+      const totalRevenue = paidBookings.reduce((sum: number, b: any) => {
         return sum + (b.totalPrice || 0);
       }, 0);
 
       // Monthly revenue
-      const monthlyBookingsForRevenue = confirmedCompletedBookings.filter((b: any) => {
+      const monthlyBookingsForRevenue = paidBookings.filter((b: any) => {
         const bookingDate = b.createdAt ? new Date(b.createdAt) : null;
         return bookingDate && bookingDate >= startOfMonth;
       });
@@ -156,7 +165,7 @@ export default function HostStatsScreen() {
             }).length
           : 0;
 
-        const monthRevenue = confirmedCompletedBookings
+        const monthRevenue = paidBookings
           .filter((b: any) => {
             const bookingDate = b.createdAt ? new Date(b.createdAt) : null;
             return bookingDate && bookingDate >= monthStart && bookingDate <= monthEnd;
@@ -243,38 +252,116 @@ export default function HostStatsScreen() {
         </View>
       </LinearGradient>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Summary Cards */}
-        <View style={styles.summaryGrid}>
+      {/* Tab Selector */}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'overview' && styles.tabActive]}
+          onPress={() => setActiveTab('overview')}
+        >
+          <Ionicons 
+            name="stats-chart" 
+            size={18} 
+            color={activeTab === 'overview' ? '#fff' : '#0a7ea4'} 
+          />
+          <ThemedText style={[
+            styles.tabText,
+            activeTab === 'overview' && styles.tabTextActive
+          ]}>
+            Tổng Quan
+          </ThemedText>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'revenue' && styles.tabActive]}
+          onPress={() => setActiveTab('revenue')}
+        >
+          <Ionicons 
+            name="cash" 
+            size={18} 
+            color={activeTab === 'revenue' ? '#fff' : '#0a7ea4'} 
+          />
+          <ThemedText style={[
+            styles.tabText,
+            activeTab === 'revenue' && styles.tabTextActive
+          ]}>
+            Doanh Thu
+          </ThemedText>
+        </TouchableOpacity>
+      </View>
+
+      {activeTab === 'overview' ? (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Summary Cards - Improved Layout */}
+          <View style={styles.summaryGrid}>
           <View style={styles.summaryCard}>
-            <Ionicons name="business" size={24} color="#0a7ea4" />
-            <ThemedText style={styles.summaryValue}>{stats.totalHomestays}</ThemedText>
-            <ThemedText style={styles.summaryLabel}>Homestay</ThemedText>
+            <LinearGradient
+              colors={['#0d8bb8', '#10a5c7']}
+              style={styles.summaryCardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.summaryCardIcon}>
+                <Ionicons name="business" size={28} color="#fff" />
+              </View>
+              <ThemedText style={styles.summaryValue}>{stats.totalHomestays}</ThemedText>
+              <ThemedText style={styles.summaryLabel}>Homestay</ThemedText>
+            </LinearGradient>
           </View>
           <View style={styles.summaryCard}>
-            <Ionicons name="calendar" size={24} color="#6366f1" />
-            <ThemedText style={styles.summaryValue}>{stats.totalBookings}</ThemedText>
-            <ThemedText style={styles.summaryLabel}>Tổng Đơn</ThemedText>
+            <LinearGradient
+              colors={['#6366f1', '#8b5cf6']}
+              style={styles.summaryCardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.summaryCardIcon}>
+                <Ionicons name="calendar" size={28} color="#fff" />
+              </View>
+              <ThemedText style={styles.summaryValue}>{stats.totalBookings}</ThemedText>
+              <ThemedText style={styles.summaryLabel}>Tổng Đơn</ThemedText>
+            </LinearGradient>
           </View>
           <View style={styles.summaryCard}>
-            <Ionicons name="cash" size={24} color="#10b981" />
-            <ThemedText style={styles.summaryValue}>{formatRevenue(stats.totalRevenue)}</ThemedText>
-            <ThemedText style={styles.summaryLabel}>Doanh Thu</ThemedText>
+            <LinearGradient
+              colors={['#10b981', '#059669']}
+              style={styles.summaryCardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.summaryCardIcon}>
+                <Ionicons name="cash" size={28} color="#fff" />
+              </View>
+              <ThemedText style={styles.summaryValue}>{formatRevenue(stats.totalRevenue)}</ThemedText>
+              <ThemedText style={styles.summaryLabel}>Doanh Thu</ThemedText>
+            </LinearGradient>
           </View>
           <View style={styles.summaryCard}>
-            <Ionicons name="bar-chart" size={24} color="#8b5cf6" />
-            <ThemedText style={styles.summaryValue}>{stats.occupancyRate}%</ThemedText>
-            <ThemedText style={styles.summaryLabel}>Tỷ Lệ Lấp Đầy</ThemedText>
+            <LinearGradient
+              colors={['#8b5cf6', '#a855f7']}
+              style={styles.summaryCardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.summaryCardIcon}>
+                <Ionicons name="bar-chart" size={28} color="#fff" />
+              </View>
+              <ThemedText style={styles.summaryValue}>{stats.occupancyRate}%</ThemedText>
+              <ThemedText style={styles.summaryLabel} numberOfLines={1}>Tỷ Lệ Lấp Đầy</ThemedText>
+            </LinearGradient>
           </View>
         </View>
 
-        {/* Charts */}
-        <HostStatsCharts stats={stats} monthlyData={monthlyData} />
-      </ScrollView>
+          {/* Charts */}
+          <HostStatsCharts stats={stats} bookings={bookings} />
+        </ScrollView>
+      ) : (
+        <View style={styles.revenueContainer}>
+          <HostRevenueStats bookings={bookings} homestays={homestays} />
+        </View>
+      )}
     </View>
   );
 }
@@ -324,28 +411,86 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   summaryCard: {
-    width: '47%',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
+    width: '48%',
+    borderRadius: 18,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+    marginBottom: 4,
+  },
+  summaryCardGradient: {
+    padding: 18,
     alignItems: 'center',
+    minHeight: 120,
+    justifyContent: 'center',
+  },
+  summaryCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  summaryValue: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#fff',
+    marginBottom: 6,
+    letterSpacing: -0.5,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+    opacity: 0.95,
+    letterSpacing: 0.2,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    borderRadius: 16,
+    padding: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
   },
-  summaryValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#11181C',
-    marginTop: 8,
-    marginBottom: 4,
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
   },
-  summaryLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6b7280',
+  tabActive: {
+    backgroundColor: '#0a7ea4',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0a7ea4',
+  },
+  tabTextActive: {
+    color: '#fff',
+  },
+  revenueContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
 });
 

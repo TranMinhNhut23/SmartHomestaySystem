@@ -24,7 +24,7 @@ import { normalizeAmenitiesFromDB } from '@/utils/homestayValidation';
 import { ChatModal } from '@/components/ChatModal';
 import { AIChatModal } from '@/components/AIChatModal';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 interface Homestay {
   _id: string;
@@ -91,9 +91,17 @@ export default function HomestayDetailScreen() {
   const [showFloatingButton, setShowFloatingButton] = useState(false);
   const [weatherData, setWeatherData] = useState<any>(null);
   const [loadingWeather, setLoadingWeather] = useState(false);
+  const [showImageViewer, setShowImageViewer] = useState(false);
+  const [viewerImageIndex, setViewerImageIndex] = useState(0);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [roomsExpanded, setRoomsExpanded] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const highlightAnim = useRef(new Animated.Value(0)).current;
   const floatingButtonAnim = useRef(new Animated.Value(0)).current;
+  const imageViewerScrollRef = useRef<ScrollView>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const roomsExpandAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (id) {
@@ -109,6 +117,45 @@ export default function HomestayDetailScreen() {
       loadWeather();
     }
   }, [homestay?._id]);
+
+  // Scroll to correct image when viewer opens
+  useEffect(() => {
+    if (showImageViewer && imageViewerScrollRef.current) {
+      setTimeout(() => {
+        imageViewerScrollRef.current?.scrollTo({
+          x: viewerImageIndex * (width - 40),
+          animated: false,
+        });
+      }, 100);
+    }
+  }, [showImageViewer, viewerImageIndex]);
+
+  // Fade in animation when component loads
+  useEffect(() => {
+    if (homestay) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [homestay]);
+
+  // Rooms expand/collapse animation
+  useEffect(() => {
+    Animated.timing(roomsExpandAnim, {
+      toValue: roomsExpanded ? 1 : 0,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [roomsExpanded]);
 
   const loadHomestay = async () => {
     try {
@@ -668,11 +715,19 @@ export default function HomestayDetailScreen() {
         {/* Hero Image with Overlay */}
         {homestay.images && homestay.images.length > 0 && (
           <View style={styles.imageContainer}>
-            <Image
-              source={{ uri: getHomestayImageUrl(homestay.images[currentImageIndex]) || '' }}
-              style={styles.mainImage}
-              resizeMode="cover"
-            />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => {
+                setViewerImageIndex(currentImageIndex);
+                setShowImageViewer(true);
+              }}
+            >
+              <Image
+                source={{ uri: getHomestayImageUrl(homestay.images[currentImageIndex]) || '' }}
+                style={styles.mainImage}
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
             
             {/* Header Overlay */}
             <View style={styles.imageHeaderOverlay}>
@@ -791,7 +846,15 @@ export default function HomestayDetailScreen() {
         )}
 
         {/* Rating and Location Card */}
-        <View style={styles.infoCard}>
+        <Animated.View 
+          style={[
+            styles.infoCard,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }
+          ]}
+        >
           <View style={styles.infoCardRow}>
             <TouchableOpacity 
               style={styles.ratingSection}
@@ -817,20 +880,19 @@ export default function HomestayDetailScreen() {
               <ThemedText style={styles.locationText}>
                 {homestay.address.district.name}, {homestay.address.province.name}
               </ThemedText>
-              <View style={styles.locationDetails}>
-                <Ionicons name="location" size={14} color="#64748b" />
-                <ThemedText style={styles.locationDetailText}>Gần khu mua sắm</ThemedText>
-              </View>
-              <View style={styles.locationDetails}>
-                <Ionicons name="location" size={14} color="#64748b" />
-                <ThemedText style={styles.locationDetailText}>Gần trung tâm thành phố</ThemedText>
-                <TouchableOpacity style={styles.mapButton}>
+              {homestay.googleMapsEmbed && (
+                <TouchableOpacity 
+                  style={styles.mapButton}
+                  onPress={() => setShowMapModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="map" size={18} color="#fff" />
                   <ThemedText style={styles.mapButtonText}>Bản đồ</ThemedText>
                 </TouchableOpacity>
-              </View>
+              )}
             </View>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Weather Card */}
         {weatherData && (
@@ -1048,6 +1110,21 @@ export default function HomestayDetailScreen() {
           </View>
         )}
 
+        {/* Terms Section */}
+        <TouchableOpacity 
+          style={styles.descriptionCard}
+          onPress={() => setShowTermsModal(true)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.descriptionHeader}>
+            <View style={styles.termsHeaderLeft}>
+              <Ionicons name="document-text" size={24} color="#0a7ea4" />
+              <ThemedText style={styles.descriptionTitle}>Điều khoản & Quy định</ThemedText>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#0a7ea4" />
+          </View>
+        </TouchableOpacity>
+
         {/* Rooms by Type */}
         {homestay.rooms && homestay.rooms.length > 0 && (
           <Animated.View 
@@ -1071,11 +1148,36 @@ export default function HomestayDetailScreen() {
               setRoomsSectionY(layout.y);
             }}
           >
-            <View style={styles.sectionHeader}>
-              <Ionicons name="bed" size={20} color="#0a7ea4" />
-              <ThemedText style={styles.sectionTitle}>Phòng</ThemedText>
-            </View>
-            <View style={styles.roomTypesList}>
+            <TouchableOpacity 
+              style={styles.roomsSectionHeader}
+              onPress={() => setRoomsExpanded(!roomsExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.roomsSectionTitleContainer}>
+                <Ionicons name="bed" size={20} color="#0a7ea4" />
+                <View style={styles.roomsSectionTitleWrapper}>
+                  <ThemedText style={styles.sectionTitle}>Phòng</ThemedText>
+                </View>
+                <Ionicons 
+                  name={roomsExpanded ? "chevron-down" : "chevron-forward"} 
+                  size={20} 
+                  color="#0a7ea4" 
+                />
+              </View>
+            </TouchableOpacity>
+            <Animated.View
+              style={[
+                styles.roomTypesList,
+                {
+                  maxHeight: roomsExpandAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 2000],
+                  }),
+                  opacity: roomsExpandAnim,
+                  overflow: 'hidden',
+                }
+              ]}
+            >
               {getRoomTypes().map((roomType) => (
                 <TouchableOpacity
                   key={roomType.type}
@@ -1115,7 +1217,7 @@ export default function HomestayDetailScreen() {
                   </View>
                 </TouchableOpacity>
               ))}
-            </View>
+            </Animated.View>
           </Animated.View>
         )}
 
@@ -1275,33 +1377,6 @@ export default function HomestayDetailScreen() {
           )}
         </View>
 
-        {/* Google Maps */}
-        {homestay.googleMapsEmbed && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="map" size={20} color="#0a7ea4" />
-              <ThemedText style={styles.sectionTitle}>Bản đồ</ThemedText>
-            </View>
-            <TouchableOpacity
-              style={styles.mapPreviewContainer}
-              onPress={() => setShowMapModal(true)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.mapPreviewContent}>
-                <View style={styles.mapPreviewIconContainer}>
-                  <Ionicons name="map" size={32} color="#0a7ea4" />
-                </View>
-                <View style={styles.mapPreviewTextContainer}>
-                  <ThemedText style={styles.mapPreviewTitle}>Xem bản đồ</ThemedText>
-                  <ThemedText style={styles.mapPreviewSubtitle}>
-                    Nhấn để xem vị trí trên bản đồ
-                  </ThemedText>
-                </View>
-                <Ionicons name="chevron-forward" size={24} color="#0a7ea4" />
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
       </ScrollView>
 
       {/* Floating Book Button */}
@@ -2099,6 +2174,251 @@ export default function HomestayDetailScreen() {
         </View>
       </Modal>
 
+      {/* Terms Modal */}
+      <Modal
+        visible={showTermsModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowTermsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowTermsModal(false)}
+          />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderLeft}>
+                <View style={styles.modalHeaderIconContainer}>
+                  <Ionicons name="document-text" size={24} color="#0a7ea4" />
+                </View>
+                <ThemedText style={styles.modalTitle}>Điều khoản & Quy định</ThemedText>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setShowTermsModal(false)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={24} color="#11181C" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.modalScrollView}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Booking Terms */}
+              <View style={styles.termsSection}>
+                <View style={styles.termsSectionHeader}>
+                  <Ionicons name="calendar" size={20} color="#0a7ea4" />
+                  <ThemedText style={styles.termsSectionTitle}>Điều khoản đặt phòng</ThemedText>
+                </View>
+                <View style={styles.termsContent}>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Thời gian nhận phòng: Từ 14:00, trả phòng: Trước 12:00
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Khách cần cung cấp thông tin chính xác khi đặt phòng
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Hủy đặt phòng trước 24 giờ sẽ được hoàn tiền 100%
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Hủy trong vòng 24 giờ sẽ bị phí hủy 50%
+                    </ThemedText>
+                  </View>
+                </View>
+              </View>
+
+              {/* Refund Policy */}
+              <View style={styles.termsSection}>
+                <View style={styles.termsSectionHeader}>
+                  <Ionicons name="cash" size={20} color="#0a7ea4" />
+                  <ThemedText style={styles.termsSectionTitle}>Chính sách hoàn tiền</ThemedText>
+                </View>
+                <View style={styles.termsContent}>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Hoàn tiền 100% nếu hủy trước 24 giờ so với thời gian nhận phòng
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Hoàn tiền 50% nếu hủy trong vòng 24 giờ
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Không hoàn tiền nếu hủy sau thời gian nhận phòng hoặc không đến
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Thời gian xử lý hoàn tiền: 3-5 ngày làm việc
+                    </ThemedText>
+                  </View>
+                </View>
+              </View>
+
+              {/* Usage Guidelines */}
+              <View style={styles.termsSection}>
+                <View style={styles.termsSectionHeader}>
+                  <Ionicons name="information-circle" size={20} color="#0a7ea4" />
+                  <ThemedText style={styles.termsSectionTitle}>Cách thức sử dụng homestay</ThemedText>
+                </View>
+                <View style={styles.termsContent}>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Vui lòng giữ gìn vệ sinh và tài sản của homestay
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Không hút thuốc trong phòng, không tổ chức tiệc tùng ồn ào
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Tuân thủ quy định về số lượng khách và giờ giấc
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Liên hệ chủ nhà nếu có vấn đề hoặc cần hỗ trợ
+                    </ThemedText>
+                  </View>
+                  <View style={styles.termItem}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                    <ThemedText style={styles.termText}>
+                      Trả phòng đúng giờ và kiểm tra lại tài sản trước khi rời đi
+                    </ThemedText>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Image Viewer Modal */}
+      <Modal
+        visible={showImageViewer}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowImageViewer(false)}
+        statusBarTranslucent={true}
+      >
+        <View style={styles.imageViewerOverlay}>
+          {/* Close Button */}
+          <TouchableOpacity
+            style={styles.imageViewerCloseButton}
+            onPress={() => setShowImageViewer(false)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.imageViewerCloseButtonInner}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </View>
+          </TouchableOpacity>
+
+          {/* Image Counter */}
+          {homestay.images && homestay.images.length > 1 && (
+            <View style={styles.imageViewerCounter}>
+              <ThemedText style={styles.imageViewerCounterText}>
+                {viewerImageIndex + 1}/{homestay.images.length}
+              </ThemedText>
+            </View>
+          )}
+
+          {/* Image Container */}
+          <View style={styles.imageViewerContainer}>
+            <ScrollView
+              ref={imageViewerScrollRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(event) => {
+                const offsetX = event.nativeEvent.contentOffset.x;
+                const index = Math.round(offsetX / (width - 40));
+                setViewerImageIndex(index);
+                setCurrentImageIndex(index);
+              }}
+              contentOffset={{ x: viewerImageIndex * (width - 40), y: 0 }}
+            >
+              {homestay.images && homestay.images.map((image, index) => (
+                <View key={index} style={styles.imageViewerItem}>
+                  <Image
+                    source={{ uri: getHomestayImageUrl(image) || '' }}
+                    style={styles.imageViewerImage}
+                    resizeMode="contain"
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Navigation Buttons */}
+          {homestay.images && homestay.images.length > 1 && (
+            <>
+              {viewerImageIndex > 0 && (
+                <TouchableOpacity
+                  style={[styles.imageViewerNavButton, styles.imageViewerNavButtonLeft]}
+                  onPress={() => {
+                    const newIndex = viewerImageIndex - 1;
+                    setViewerImageIndex(newIndex);
+                    setCurrentImageIndex(newIndex);
+                    imageViewerScrollRef.current?.scrollTo({
+                      x: newIndex * (width - 40),
+                      animated: true,
+                    });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="chevron-back" size={28} color="#fff" />
+                </TouchableOpacity>
+              )}
+              {viewerImageIndex < homestay.images.length - 1 && (
+                <TouchableOpacity
+                  style={[styles.imageViewerNavButton, styles.imageViewerNavButtonRight]}
+                  onPress={() => {
+                    const newIndex = viewerImageIndex + 1;
+                    setViewerImageIndex(newIndex);
+                    setCurrentImageIndex(newIndex);
+                    imageViewerScrollRef.current?.scrollTo({
+                      x: newIndex * (width - 40),
+                      animated: true,
+                    });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="chevron-forward" size={28} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </View>
+      </Modal>
+
       {/* Chat Modal */}
       {homestay.host && user && !isOwner && getHostId() && (
         <ChatModal
@@ -2184,12 +2504,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   imageHeaderButtonInner: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
   imageHeaderRight: {
     flexDirection: 'row',
@@ -2285,13 +2610,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     marginHorizontal: 16,
     marginTop: 16,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#0a7ea4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#f0f9ff',
   },
   infoCardRow: {
     flexDirection: 'row',
@@ -2345,13 +2672,26 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   mapButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#0a7ea4',
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    shadowColor: '#0a7ea4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   mapButtonText: {
-    fontSize: 13,
-    color: '#0a7ea4',
-    fontWeight: '600',
+    fontSize: 15,
+    color: '#fff',
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   amenitiesQuickCard: {
     flexDirection: 'row',
@@ -2408,13 +2748,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     marginHorizontal: 16,
     marginTop: 16,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#0a7ea4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#f0f9ff',
   },
   descriptionHeader: {
     flexDirection: 'row',
@@ -2458,6 +2800,34 @@ const styles = StyleSheet.create({
     color: '#11181C',
     letterSpacing: 0.3,
   },
+  roomsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  roomsSectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#0a7ea4',
+    gap: 12,
+    shadowColor: '#0a7ea4',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  roomsSectionTitleWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   addressContent: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2473,19 +2843,20 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   roomTypesList: {
-    gap: 14,
+    gap: 16,
+    paddingTop: 8,
   },
   roomTypeCard: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: '#e0f2fe',
     shadowColor: '#0a7ea4',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
   },
   roomTypeCardHeader: {
     flexDirection: 'row',
@@ -3322,14 +3693,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     marginHorizontal: 16,
     marginTop: 12,
-    borderRadius: 16,
-    padding: 18,
+    borderRadius: 20,
+    padding: 20,
     shadowColor: '#0a7ea4',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1.5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+    borderWidth: 2,
     borderColor: '#e0f2fe',
   },
   weatherCardHeader: {
@@ -3506,6 +3877,114 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#0a7ea4',
     fontWeight: '600',
+  },
+  termsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  termsSection: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  termsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  termsSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#11181C',
+  },
+  termsContent: {
+    gap: 12,
+  },
+  termItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  termText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
+  },
+  imageViewerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageViewerCloseButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+  },
+  imageViewerCloseButtonInner: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageViewerCounter: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    zIndex: 10,
+  },
+  imageViewerCounterText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  imageViewerContainer: {
+    width: width - 40,
+    height: height - 100,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    marginHorizontal: 20,
+    marginVertical: 50,
+  },
+  imageViewerItem: {
+    width: width - 40,
+    height: height - 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageViewerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageViewerNavButton: {
+    position: 'absolute',
+    top: '50%',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  imageViewerNavButtonLeft: {
+    left: 20,
+  },
+  imageViewerNavButtonRight: {
+    right: 20,
   },
 });
 

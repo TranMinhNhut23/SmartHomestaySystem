@@ -29,13 +29,6 @@ export function AdminQuickActionsSection() {
       gradient: ['#f59e0b', '#f97316'],
     },
     {
-      id: 'manage-bookings',
-      title: 'Quản Lý Đặt Phòng',
-      icon: 'calendar',
-      route: '/admin-bookings',
-      gradient: ['#10b981', '#059669'],
-    },
-    {
       id: 'statistics',
       title: 'Thống Kê & Báo Cáo',
       icon: 'stats-chart',

@@ -495,37 +495,43 @@ class CouponService {
         }
       }
 
-      // Filter trong code để dễ debug
-      const validCoupons = allActiveCoupons.filter(coupon => {
-        // Kiểm tra thời gian hiệu lực
+      // Chỉ filter theo thời gian hiệu lực (không filter theo usage)
+      // Frontend sẽ phân loại: quá hạn (không hiển thị), còn hạn nhưng hết lượt (hiển thị mờ), còn hạn và còn lượt (hiển thị bình thường)
+      const validDateCoupons = allActiveCoupons.filter(coupon => {
+        // Chỉ kiểm tra thời gian hiệu lực
         const isValidDate = coupon.startDate <= now && coupon.endDate >= now;
         
-        // Kiểm tra số lần sử dụng
-        const isValidUsage = !coupon.maxUsageTotal || coupon.usedCount < coupon.maxUsageTotal;
-        
         if (!isValidDate) {
-          console.log(`Coupon ${coupon.code} is not in valid date range. Start: ${coupon.startDate}, End: ${coupon.endDate}`);
-        }
-        if (!isValidUsage) {
-          console.log(`Coupon ${coupon.code} exceeded max usage. Used: ${coupon.usedCount}, Max: ${coupon.maxUsageTotal}`);
+          console.log(`Coupon ${coupon.code} is expired. Start: ${coupon.startDate}, End: ${coupon.endDate}`);
         }
         
-        return isValidDate && isValidUsage;
+        return isValidDate;
       });
       
-      console.log(`Found ${validCoupons.length} valid active coupons`);
+      console.log(`Found ${validDateCoupons.length} coupons within valid date range`);
 
-      return validCoupons.map(coupon => ({
-        _id: coupon._id,
-        name: coupon.name,
-        code: coupon.code,
-        discountType: coupon.discountType,
-        discountValue: coupon.discountValue,
-        maxDiscount: coupon.maxDiscount,
-        minOrder: coupon.minOrder,
-        startDate: coupon.startDate,
-        endDate: coupon.endDate
-      }));
+      return validDateCoupons.map(coupon => {
+        // Kiểm tra số lần sử dụng
+        const isOutOfUsage = coupon.maxUsageTotal && coupon.usedCount >= coupon.maxUsageTotal;
+        
+        return {
+          _id: coupon._id,
+          name: coupon.name,
+          code: coupon.code,
+          discountType: coupon.discountType,
+          discountValue: coupon.discountValue,
+          maxDiscount: coupon.maxDiscount,
+          minOrder: coupon.minOrder,
+          startDate: coupon.startDate,
+          endDate: coupon.endDate,
+          status: coupon.status, // Thêm status
+          appliesTo: coupon.appliesTo, // Thêm appliesTo
+          hostId: coupon.hostId, // Thêm hostId
+          usedCount: coupon.usedCount || 0,
+          maxUsageTotal: coupon.maxUsageTotal,
+          isOutOfUsage: isOutOfUsage // Thêm flag để frontend dễ xử lý
+        };
+      });
     } catch (error) {
       console.error('Error in getActiveCoupons:', error);
       throw error;

@@ -112,6 +112,10 @@ app.use('/api/chat', require('./src/routes/chatRoutes'));
 app.use('/api/reviews', require('./src/routes/reviewRoutes'));
 app.use('/api/admin', require('./src/routes/adminRoutes'));
 
+// Public route for system config (no authentication required)
+const systemConfigController = require('./src/controllers/systemConfigController');
+app.get('/api/system-config', systemConfigController.getConfig.bind(systemConfigController));
+
 // Load notification routes với error handling
 try {
   const notificationRoutes = require('./src/routes/notificationRoutes');
@@ -146,6 +150,7 @@ console.log('  - /api/chat');
 console.log('  - /api/reviews');
 console.log('  - /api/notifications');
 console.log('  - /api/admin');
+console.log('  - /api/system-config (public)');
 
 // Route test
 app.get('/', (req, res) => {

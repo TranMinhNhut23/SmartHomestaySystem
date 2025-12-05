@@ -90,20 +90,20 @@ export function HostDashboardSection({ user }: HostDashboardSectionProps) {
 
 const styles = StyleSheet.create({
   container: {
-    gap: 20,
+    gap: 24,
     paddingHorizontal: 16,
     paddingBottom: 24,
     paddingTop: 8,
   },
   headerCard: {
-    borderRadius: 18,
+    borderRadius: 20,
     overflow: 'hidden',
     marginBottom: 0,
     marginTop: 0,
     shadowColor: '#0a7ea4',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 10,
+    shadowRadius: 12,
     elevation: 6,
   },
   headerGradient: {

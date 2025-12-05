@@ -114,18 +114,18 @@ export function HostStatsSection({ user }: HostStatsSectionProps) {
           }).length
         : 0;
 
-      // Calculate revenue
-      const confirmedCompletedBookings = Array.isArray(bookings)
+      // Calculate revenue - chỉ tính các booking đã thanh toán
+      const paidBookings = Array.isArray(bookings)
         ? bookings.filter(
-            (b: any) => b.status === 'confirmed' || b.status === 'completed'
+            (b: any) => b.paymentStatus === 'paid'
           )
         : [];
-      const totalRevenue = confirmedCompletedBookings.reduce((sum: number, b: any) => {
+      const totalRevenue = paidBookings.reduce((sum: number, b: any) => {
         return sum + (b.totalPrice || 0);
       }, 0);
 
-      // Monthly revenue
-      const monthlyBookingsForRevenue = confirmedCompletedBookings.filter((b: any) => {
+      // Monthly revenue - chỉ tính các booking đã thanh toán trong tháng hiện tại
+      const monthlyBookingsForRevenue = paidBookings.filter((b: any) => {
         const bookingDate = b.createdAt ? new Date(b.createdAt) : null;
         return bookingDate && bookingDate >= startOfMonth;
       });

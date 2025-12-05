@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const systemConfigController = require('../controllers/systemConfigController');
 const { authenticate, authorize } = require('../middleware/authMiddleware');
 
 // Tất cả routes đều cần admin role
@@ -20,5 +21,11 @@ router.get('/stats/revenue', adminController.getRevenueStats.bind(adminControlle
 
 // Maintenance fee management
 router.post('/maintenance-fee/process', adminController.processMaintenanceFeeManually.bind(adminController));
+
+// System Config management
+router.get('/system-config', systemConfigController.getConfig.bind(systemConfigController));
+router.put('/system-config', systemConfigController.updateConfig.bind(systemConfigController));
+router.put('/system-config/banner-images', systemConfigController.updateBannerImages.bind(systemConfigController));
+router.put('/system-config/sale-events', systemConfigController.updateSaleEvents.bind(systemConfigController));
 
 module.exports = router;
