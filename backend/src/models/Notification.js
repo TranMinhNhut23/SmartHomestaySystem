@@ -19,6 +19,7 @@ const notificationSchema = new mongoose.Schema({
       'payment_success',
       'payment_failed',
       'review_posted',
+      'host_response_to_review',
       // Host notifications
       'new_booking_request',
       'booking_payment_received',

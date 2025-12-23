@@ -110,6 +110,7 @@ app.use('/api/wallet', require('./src/routes/walletRoutes'));
 app.use('/api/chats', require('./src/routes/chatRoutes'));
 app.use('/api/chat', require('./src/routes/chatRoutes'));
 app.use('/api/reviews', require('./src/routes/reviewRoutes'));
+app.use('/api/complaints', require('./src/routes/complaintRoutes'));
 app.use('/api/admin', require('./src/routes/adminRoutes'));
 
 // Public route for system config (no authentication required)
@@ -148,6 +149,7 @@ console.log('  - /api/wallet');
 console.log('  - /api/chats');
 console.log('  - /api/chat');
 console.log('  - /api/reviews');
+console.log('  - /api/complaints');
 console.log('  - /api/notifications');
 console.log('  - /api/admin');
 console.log('  - /api/system-config (public)');

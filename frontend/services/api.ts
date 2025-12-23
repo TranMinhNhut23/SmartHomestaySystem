@@ -950,6 +950,39 @@ class ApiService {
     });
   }
 
+  async getHostReviews(params?: {
+    page?: number;
+    limit?: number;
+    rating?: number;
+    hasResponse?: boolean | null; // null: tất cả, true: đã reply, false: chưa reply
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.rating) queryParams.append('rating', params.rating.toString());
+    if (params?.hasResponse !== undefined && params.hasResponse !== null) {
+      queryParams.append('hasResponse', params.hasResponse.toString());
+    }
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    
+    const queryString = queryParams.toString();
+    const endpoint = `/reviews/host/my-reviews${queryString ? `?${queryString}` : ''}`;
+    
+    return this.request<any>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  async addHostResponse(reviewId: string, response: string) {
+    return this.request<any>(`/reviews/${reviewId}/host-response`, {
+      method: 'POST',
+      body: JSON.stringify({ response }),
+    });
+  }
+
   // Notification APIs
   async getNotifications(params?: {
     page?: number;
@@ -1188,6 +1221,78 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify({ saleEvents }),
     });
+  }
+
+  // ========== COMPLAINT METHODS ==========
+
+  async createComplaint(data: {
+    type: string;
+    title: string;
+    content: string;
+    relatedEntity?: {
+      entityType: string;
+      entityId: string;
+    };
+    priority?: string;
+    attachments?: string[];
+  }) {
+    return await this.post('/complaints', data);
+  }
+
+  async getMyComplaints(params?: {
+    status?: string;
+    type?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.type) queryParams.append('type', params.type);
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    
+    const query = queryParams.toString();
+    return await this.get(`/complaints/my-complaints${query ? `?${query}` : ''}`);
+  }
+
+  async getComplaintById(complaintId: string) {
+    return await this.get(`/complaints/${complaintId}`);
+  }
+
+  async addComplaintFeedback(complaintId: string, rating: number, comment?: string) {
+    return await this.post(`/complaints/${complaintId}/feedback`, { rating, comment });
+  }
+
+  async getAllComplaints(params?: {
+    status?: string;
+    type?: string;
+    priority?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.type) queryParams.append('type', params.type);
+    if (params?.priority) queryParams.append('priority', params.priority);
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) queryParams.append('sortOrder', params.sortOrder);
+    
+    const query = queryParams.toString();
+    return await this.get(`/complaints${query ? `?${query}` : ''}`);
+  }
+
+  async updateComplaintStatus(complaintId: string, status: string, response?: string) {
+    return await this.put(`/complaints/${complaintId}/status`, { status, response });
   }
 }
 

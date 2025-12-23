@@ -198,10 +198,11 @@ Hoặc bạn có thể mở modal đặt phòng để chọn ngày trước, sau
       // Gọi AI service với thông tin homestay và database context
       // System prompt sẽ được tự động thêm nếu chưa có trong conversation
       // Nếu có homestayId hoặc bookingId, sẽ tự động fetch dữ liệu từ database
+      // Sử dụng model mặc định (amazon/nova-2-lite-v1:free) với reasoning enabled
       const response = await aiService.chat(
         updatedHistory, 
-        'x-ai/grok-4.1-fast:free', 
-        true,
+        undefined, // Sử dụng model mặc định từ aiService (amazon/nova-2-lite-v1:free)
+        true, // Bật reasoning để model có thể suy luận tốt hơn
         {
           homestayName,
           homestayAddress,

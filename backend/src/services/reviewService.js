@@ -330,6 +330,80 @@ class ReviewService {
       throw error;
     }
   }
+
+  // Lấy tất cả reviews của các homestay mà host sở hữu
+  async getHostReviews(hostId, params = {}) {
+    try {
+      const {
+        page = 1,
+        limit = 10,
+        rating = null,
+        hasResponse = null, // null: tất cả, true: đã reply, false: chưa reply
+        sortBy = 'createdAt',
+        sortOrder = 'desc'
+      } = params;
+
+      // Lấy tất cả homestay của host
+      const homestays = await Homestay.find({ host: hostId }).select('_id');
+      const homestayIds = homestays.map(h => h._id);
+
+      if (homestayIds.length === 0) {
+        return {
+          reviews: [],
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0
+          }
+        };
+      }
+
+      const query = {
+        homestay: { $in: homestayIds }
+      };
+
+      if (rating) {
+        query.rating = parseInt(rating);
+      }
+
+      // Filter theo có response hay chưa
+      if (hasResponse === true) {
+        query['hostResponse.comment'] = { $exists: true, $ne: null };
+      } else if (hasResponse === false) {
+        query.$or = [
+          { 'hostResponse.comment': { $exists: false } },
+          { 'hostResponse.comment': null }
+        ];
+      }
+
+      const skip = (page - 1) * limit;
+      const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
+
+      const reviews = await Review.find(query)
+        .populate('guest', 'username avatar email')
+        .populate('booking', 'checkIn checkOut numberOfGuests')
+        .populate('homestay', 'name address images')
+        .sort(sort)
+        .skip(skip)
+        .limit(limit);
+
+      const total = await Review.countDocuments(query);
+
+      return {
+        reviews: reviews.map(r => r.toObject()),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit)
+        }
+      };
+    } catch (error) {
+      console.error('Error getting host reviews:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new ReviewService();

@@ -170,6 +170,8 @@ export default function NotificationsScreen() {
         router.push(`/homestay-detail?id=${notification.data.homestayId}`);
       } else if (notification.type === 'wallet_deposit' || notification.type === 'wallet_withdraw') {
         router.push('/wallet-transactions');
+      } else if (notification.type === 'host_response_to_review' && notification.data.reviewId) {
+        router.push('/my-reviews');
       }
     }
   };
@@ -191,6 +193,7 @@ export default function NotificationsScreen() {
         return 'alert-circle-outline';
       case 'review_posted':
       case 'new_review':
+      case 'host_response_to_review':
         return 'star-outline';
       case 'homestay_approved':
         return 'checkmark-done-outline';

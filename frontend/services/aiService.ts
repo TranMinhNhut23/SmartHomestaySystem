@@ -1,4 +1,4 @@
-// AI Service để gọi OpenRouter API với Grok model
+
 import Constants from 'expo-constants';
 import { apiService } from './api';
 
@@ -477,7 +477,7 @@ class AIService {
 
   async chat(
     messages: AIMessage[], 
-    model: string = 'x-ai/grok-4.1-fast:free', 
+    model: string = 'amazon/nova-2-lite-v1:free', 
     enableReasoning: boolean = true,
     options?: {
       homestayName?: string;
@@ -549,6 +549,20 @@ class AIService {
       }
     }
 
+    // Danh sách model fallback nếu model chính không hoạt động
+    const fallbackModels = [
+      model,
+      'amazon/nova-2-lite-v1:free',
+      'meta-llama/llama-3.2-3b-instruct:free',
+      'google/gemini-flash-1.5:free',
+      'microsoft/phi-3-mini-128k-instruct:free',
+      'qwen/qwen-2.5-7b-instruct:free',
+    ].filter((m, index, arr) => arr.indexOf(m) === index); // Loại bỏ duplicate
+
+    let lastError: Error | null = null;
+
+    // Thử từng model cho đến khi thành công
+    for (const currentModel of fallbackModels) {
     try {
       const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
@@ -559,19 +573,32 @@ class AIService {
           'X-Title': 'Smart Homestay System',
         },
         body: JSON.stringify({
-          model,
+            model: currentModel,
           messages: finalMessages.map(msg => ({
             role: msg.role,
             content: msg.content,
+              // Preserve reasoning_details từ assistant messages (quan trọng cho reasoning continuation)
             ...(msg.reasoning_details && { reasoning_details: msg.reasoning_details }),
           })),
-          ...(enableReasoning && { reasoning: { enabled: true } }),
+            // Enable reasoning cho các model hỗ trợ (Amazon Nova, Grok)
+            ...(enableReasoning && (currentModel.includes('nova') || currentModel.includes('grok')) && { 
+              reasoning: { enabled: true } 
+            }),
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `API error: ${response.status} ${response.statusText}`);
+          const errorMessage = errorData.error?.message || `API error: ${response.status} ${response.statusText}`;
+          
+          // Nếu lỗi là "No endpoints found", thử model tiếp theo
+          if (errorMessage.includes('No endpoints found') || errorMessage.includes('not found')) {
+            console.warn(`Model ${currentModel} không khả dụng, thử model tiếp theo...`);
+            lastError = new Error(errorMessage);
+            continue;
+          }
+          
+          throw new Error(errorMessage);
       }
 
       const result = await response.json();
@@ -582,14 +609,35 @@ class AIService {
 
       const assistantMessage = result.choices[0].message;
 
+        // Nếu đã fallback sang model khác, log để thông báo
+        if (currentModel !== model) {
+          console.info(`Đã sử dụng model fallback: ${currentModel} thay vì ${model}`);
+        }
+
       return {
         content: assistantMessage.content || '',
         reasoning_details: assistantMessage.reasoning_details,
       };
     } catch (error: any) {
+        // Nếu lỗi là "No endpoints found", tiếp tục thử model tiếp theo
+        if (error.message?.includes('No endpoints found') || error.message?.includes('not found')) {
+          console.warn(`Model ${currentModel} không khả dụng:`, error.message);
+          lastError = error;
+          continue;
+        }
+        
+        // Nếu là lỗi khác (network, auth, etc.), throw ngay
       console.error('AI Service Error:', error);
       throw new Error(error.message || 'Có lỗi xảy ra khi gọi AI service');
     }
+    }
+
+    // Nếu tất cả model đều thất bại
+    console.error('Tất cả các model đều không khả dụng');
+    throw new Error(
+      lastError?.message || 
+      'Không tìm thấy model AI khả dụng. Vui lòng kiểm tra lại cấu hình hoặc thử lại sau.'
+    );
   }
 
   // Helper để tạo prompt gợi ý lịch trình với dữ liệu từ database

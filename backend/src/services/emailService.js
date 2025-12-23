@@ -1314,6 +1314,379 @@ class EmailService {
       };
     }
   }
+
+  // Tạo template email phản hồi khiếu nại
+  createComplaintResponseTemplate(complaintData) {
+    const {
+      complaintTitle,
+      complaintType,
+      username,
+      status,
+      adminResponse,
+      adminName,
+      respondedAt
+    } = complaintData;
+
+    const formatDate = (dateString) => {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('vi-VN', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+
+    const getStatusInfo = (status) => {
+      switch (status) {
+        case 'resolved':
+          return {
+            text: 'Đã giải quyết',
+            color: '#10b981',
+            icon: '✅',
+            bgColor: '#d1fae5'
+          };
+        case 'in_progress':
+          return {
+            text: 'Đang xử lý',
+            color: '#f59e0b',
+            icon: '⏳',
+            bgColor: '#fef3c7'
+          };
+        case 'rejected':
+          return {
+            text: 'Đã từ chối',
+            color: '#ef4444',
+            icon: '❌',
+            bgColor: '#fee2e2'
+          };
+        default:
+          return {
+            text: 'Đang chờ',
+            color: '#6b7280',
+            icon: '📋',
+            bgColor: '#f3f4f6'
+          };
+      }
+    };
+
+    const statusInfo = getStatusInfo(status);
+    const typeLabels = {
+      homestay: 'Khiếu nại về Homestay',
+      booking: 'Khiếu nại về Đặt phòng',
+      payment: 'Khiếu nại về Thanh toán',
+      service: 'Khiếu nại về Dịch vụ',
+      host: 'Khiếu nại về Chủ nhà',
+      other: 'Khiếu nại khác'
+    };
+
+    return `
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phản hồi khiếu nại</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #1f2937;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .email-wrapper {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .header-gradient {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%);
+      padding: 40px 30px;
+      text-align: center;
+      color: #ffffff;
+      position: relative;
+      overflow: hidden;
+    }
+    .header-gradient h1 {
+      font-size: 28px;
+      font-weight: 800;
+      margin: 0;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      letter-spacing: 0.5px;
+    }
+    .header-gradient p {
+      margin-top: 10px;
+      font-size: 16px;
+      opacity: 0.95;
+    }
+    .content {
+      padding: 40px 30px;
+    }
+    .greeting {
+      font-size: 18px;
+      color: #374151;
+      margin-bottom: 30px;
+      line-height: 1.8;
+    }
+    .greeting strong {
+      color: #ef4444;
+      font-weight: 700;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border-radius: 25px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin: 20px 0;
+    }
+    .complaint-info-box {
+      background: #f8fafc;
+      padding: 25px;
+      border-radius: 12px;
+      margin: 30px 0;
+      border-left: 5px solid #ef4444;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 12px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .info-row:last-child {
+      border-bottom: none;
+    }
+    .info-label {
+      color: #6b7280;
+      font-weight: 600;
+      font-size: 15px;
+      min-width: 150px;
+    }
+    .info-value {
+      color: #111827;
+      font-weight: 500;
+      font-size: 15px;
+      text-align: right;
+      flex: 1;
+    }
+    .response-box {
+      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+      padding: 30px;
+      border-radius: 12px;
+      margin: 30px 0;
+      border: 2px solid #0a7ea4;
+      box-shadow: 0 4px 16px rgba(10, 126, 164, 0.1);
+    }
+    .response-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0a7ea4;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .response-content {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 8px;
+      color: #374151;
+      font-size: 15px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      border: 1px solid #e5e7eb;
+    }
+    .admin-info {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #0a7ea4;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .footer {
+      background: #f9fafb;
+      padding: 30px;
+      text-align: center;
+      border-top: 2px solid #e5e7eb;
+      color: #6b7280;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .footer strong {
+      color: #ef4444;
+      font-weight: 700;
+    }
+    @media only screen and (max-width: 600px) {
+      .content {
+        padding: 25px 20px;
+      }
+      .header-gradient {
+        padding: 30px 20px;
+      }
+      .header-gradient h1 {
+        font-size: 24px;
+      }
+      .info-row {
+        flex-direction: column;
+        gap: 5px;
+      }
+      .info-value {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <div class="header-gradient">
+      <h1>📝 Phản Hồi Khiếu Nại</h1>
+      <p>Smart Homestay System</p>
+    </div>
+
+    <div class="content">
+      <div class="greeting">
+        Xin chào <strong>${username}</strong>,<br>
+        Chúng tôi đã xem xét và xử lý khiếu nại của bạn.
+      </div>
+
+      <div class="complaint-info-box">
+        <div class="info-row">
+          <span class="info-label">Tiêu đề khiếu nại:</span>
+          <span class="info-value">${complaintTitle}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Loại khiếu nại:</span>
+          <span class="info-value">${typeLabels[complaintType] || complaintType}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Trạng thái:</span>
+          <span class="info-value">
+            <span class="status-badge" style="background: ${statusInfo.bgColor}; color: ${statusInfo.color};">
+              ${statusInfo.icon} ${statusInfo.text}
+            </span>
+          </span>
+        </div>
+      </div>
+
+      ${adminResponse ? `
+      <div class="response-box">
+        <div class="response-title">
+          <span>💬</span>
+          Phản Hồi Từ Ban Quản Trị
+        </div>
+        <div class="response-content">
+${adminResponse}
+        </div>
+        <div class="admin-info">
+          <p>Phản hồi bởi: <strong>${adminName}</strong></p>
+          <p>Thời gian: ${formatDate(respondedAt)}</p>
+        </div>
+      </div>
+      ` : ''}
+
+      <div style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); padding: 20px; border-radius: 12px; margin: 30px 0; border-left: 5px solid #f59e0b;">
+        <p style="color: #78350f; font-size: 14px; line-height: 1.6;">
+          💡 <strong>Lưu ý:</strong> Nếu bạn có thắc mắc thêm về phản hồi này, vui lòng liên hệ với chúng tôi hoặc gửi khiếu nại mới qua ứng dụng.
+        </p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi.</p>
+      <p><strong>Smart Homestay System</strong></p>
+      <p style="font-size: 12px; color: #9ca3af; margin-top: 15px;">Email này được gửi tự động, vui lòng không trả lời.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  // Gửi email phản hồi khiếu nại
+  async sendComplaintResponseEmail(complaint, userEmail) {
+    try {
+      // Kiểm tra cấu hình email
+      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+        console.warn('Email service: Chưa cấu hình email, bỏ qua việc gửi email');
+        return { success: false, message: 'Chưa cấu hình email service' };
+      }
+
+      // Populate thông tin nếu chưa có
+      let user = complaint.user;
+      let admin = complaint.adminResponse?.respondedBy;
+
+      if (typeof user === 'string' || !user) {
+        const User = require('../models/User');
+        user = await User.findById(complaint.user).select('username email');
+      }
+
+      if (typeof admin === 'string' || admin) {
+        const User = require('../models/User');
+        if (complaint.adminResponse?.respondedBy) {
+          admin = await User.findById(complaint.adminResponse.respondedBy).select('username email');
+        }
+      }
+
+      // Tạo template email
+      const emailHtml = this.createComplaintResponseTemplate({
+        complaintTitle: complaint.title,
+        complaintType: complaint.type,
+        username: user?.username || 'Khách hàng',
+        status: complaint.status,
+        adminResponse: complaint.adminResponse?.response || null,
+        adminName: admin?.username || 'Ban quản trị',
+        respondedAt: complaint.adminResponse?.respondedAt || new Date()
+      });
+
+      const statusText = complaint.status === 'resolved' ? 'Đã giải quyết' :
+                        complaint.status === 'in_progress' ? 'Đang xử lý' :
+                        complaint.status === 'rejected' ? 'Đã từ chối' : 'Đang chờ';
+
+      // Gửi email
+      const mailOptions = {
+        from: `"Smart Homestay" <${process.env.EMAIL_USER}>`,
+        to: userEmail,
+        subject: `📝 Phản hồi khiếu nại: ${complaint.title} - ${statusText}`,
+        html: emailHtml,
+        text: `Khiếu nại của bạn đã được cập nhật: ${statusText}. ${complaint.adminResponse?.response ? `Phản hồi: ${complaint.adminResponse.response}` : ''}`
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log('Complaint response email sent successfully:', info.messageId);
+      
+      return { 
+        success: true, 
+        messageId: info.messageId,
+        message: 'Email phản hồi đã được gửi thành công'
+      };
+    } catch (error) {
+      console.error('Lỗi gửi email phản hồi khiếu nại:', error);
+      // Không throw error để không ảnh hưởng đến flow cập nhật
+      return { 
+        success: false, 
+        error: error.message,
+        message: 'Không thể gửi email, nhưng khiếu nại đã được cập nhật thành công'
+      };
+    }
+  }
 }
 
 module.exports = new EmailService();

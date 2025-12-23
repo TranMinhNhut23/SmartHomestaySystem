@@ -42,6 +42,13 @@ export function HostQuickActionsSection() {
       route: '/promotions',
       gradient: ['#10b981', '#059669'],
     },
+    {
+      id: 'host-reviews',
+      title: 'Đánh Giá',
+      icon: 'star',
+      route: '/host-reviews',
+      gradient: ['#fbbf24', '#f59e0b'],
+    },
   ];
 
   return (

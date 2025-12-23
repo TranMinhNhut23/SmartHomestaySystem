@@ -18,6 +18,9 @@ router.get('/homestay/:homestayId', reviewController.getHomestayReviews.bind(rev
 // Lấy danh sách đánh giá của user
 router.get('/my-reviews', reviewController.getUserReviews.bind(reviewController));
 
+// Lấy tất cả reviews của các homestay mà host sở hữu (chỉ host)
+router.get('/host/my-reviews', authorize('host'), reviewController.getHostReviews.bind(reviewController));
+
 // Lấy đánh giá theo ID
 router.get('/:id', reviewController.getReviewById.bind(reviewController));
 
@@ -31,6 +34,8 @@ router.delete('/:id', reviewController.deleteReview.bind(reviewController));
 router.post('/:id/host-response', authorize('host'), reviewController.addHostResponse.bind(reviewController));
 
 module.exports = router;
+
+
 
 
 

@@ -1,5 +1,6 @@
 const reviewService = require('../services/reviewService');
 const notificationService = require('../services/notificationService');
+const Review = require('../models/Review');
 const Booking = require('../models/Booking');
 const Homestay = require('../models/Homestay');
 
@@ -248,6 +249,27 @@ class ReviewController {
 
       const review = await reviewService.addHostResponse(id, response.trim(), hostId);
 
+      // Gửi notification cho guest khi host reply
+      try {
+        const reviewDoc = await Review.findById(id).populate('homestay', 'host');
+        if (reviewDoc && reviewDoc.guest && reviewDoc.homestay) {
+          const homestayId = typeof reviewDoc.homestay === 'object' 
+            ? reviewDoc.homestay._id 
+            : reviewDoc.homestay;
+          
+          if (homestayId) {
+            await notificationService.notifyHostResponseToReview(
+              id,
+              homestayId.toString(),
+              hostId.toString()
+            );
+          }
+        }
+      } catch (notifError) {
+        console.error('Error creating host response notification:', notifError);
+        // Không throw error, chỉ log
+      }
+
       res.json({
         success: true,
         message: 'Phản hồi đã được thêm',
@@ -258,6 +280,35 @@ class ReviewController {
       res.status(400).json({
         success: false,
         message: error.message || 'Không thể thêm phản hồi'
+      });
+    }
+  }
+
+  // Lấy tất cả reviews của các homestay mà host sở hữu
+  async getHostReviews(req, res) {
+    try {
+      const hostId = req.userId;
+      const params = {
+        page: parseInt(req.query.page) || 1,
+        limit: parseInt(req.query.limit) || 10,
+        rating: req.query.rating || null,
+        hasResponse: req.query.hasResponse === 'true' ? true : req.query.hasResponse === 'false' ? false : null,
+        sortBy: req.query.sortBy || 'createdAt',
+        sortOrder: req.query.sortOrder || 'desc'
+      };
+
+      const result = await reviewService.getHostReviews(hostId, params);
+
+      res.json({
+        success: true,
+        data: result.reviews,
+        pagination: result.pagination
+      });
+    } catch (error) {
+      console.error('Error in getHostReviews:', error);
+      res.status(400).json({
+        success: false,
+        message: error.message || 'Không thể lấy danh sách đánh giá'
       });
     }
   }

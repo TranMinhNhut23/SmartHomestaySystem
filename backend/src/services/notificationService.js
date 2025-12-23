@@ -482,6 +482,34 @@ class NotificationService {
     );
   }
 
+  // Host response to review - notify guest
+  async notifyHostResponseToReview(reviewId, homestayId, hostId) {
+    const Review = require('../models/Review');
+    const Homestay = require('../models/Homestay');
+    
+    const review = await Review.findById(reviewId).populate('homestay', 'name').populate('guest', '_id');
+    const homestay = await Homestay.findById(homestayId);
+    
+    if (!review || !homestay || !review.guest) return;
+
+    const guestId = typeof review.guest === 'object' 
+      ? review.guest._id 
+      : review.guest;
+    const homestayName = homestay.name || 'Homestay';
+    
+    return await this.createNotification(
+      guestId.toString(),
+      'host_response_to_review',
+      'Chủ nhà đã phản hồi đánh giá của bạn',
+      `Chủ nhà đã phản hồi đánh giá của bạn về homestay "${homestayName}".`,
+      { 
+        reviewId: review._id.toString(), 
+        homestayId: homestay._id.toString(),
+        hostId: hostId.toString()
+      }
+    );
+  }
+
   // Maintenance fee failed - notify host and admin
   async notifyMaintenanceFeeFailed(hostId, requestedAmount, actualDeducted, missingAmount, balanceAfter) {
     const formattedRequested = requestedAmount.toLocaleString('vi-VN');

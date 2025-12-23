@@ -87,6 +87,15 @@ export function FeatureCardsSection({ isAuthenticated, user }: FeatureCardsSecti
         () => router.push('/my-bookings' as any)
       )}
 
+      {/* Đánh giá của tôi (cho tất cả user đã đăng nhập) */}
+      {isAuthenticated && renderFeatureCard(
+        'Đánh Giá Của Tôi',
+        'Xem các đánh giá bạn đã đăng và phản hồi từ chủ nhà',
+        'star-outline',
+        ['#fbbf24', '#f59e0b'],
+        () => router.push('/my-reviews' as any)
+      )}
+
       {/* Khuyến mãi (host và admin) */}
       {isAuthenticated && (user?.roleName === 'host' || user?.roleName === 'admin') && renderFeatureCard(
         'Khuyến Mãi',
@@ -169,13 +178,20 @@ export function FeatureCardsSection({ isAuthenticated, user }: FeatureCardsSecti
         true
       )}
 
-      {/* Trung tâm hỗ trợ */}
-      {renderFeatureCard(
-        'Trung tâm hỗ trợ',
-        'Nơi giải đáp mọi thắc mắc của bạn',
-        'help-circle-outline',
-        ['#6366f1', '#4f46e5'],
-        () => {}
+      {/* Gửi Khiếu Nại */}
+      {isAuthenticated ? renderFeatureCard(
+        'Gửi Khiếu Nại',
+        'Gửi khiếu nại về dịch vụ, homestay, hoặc đặt phòng',
+        'alert-circle-outline',
+        ['#ef4444', '#dc2626'],
+        () => router.push('/complaint' as any)
+      ) : renderFeatureCard(
+        'Gửi Khiếu Nại',
+        'Đăng nhập để gửi khiếu nại',
+        'alert-circle-outline',
+        ['#6b7280', '#4b5563'],
+        () => {},
+        true
       )}
     </View>
   );

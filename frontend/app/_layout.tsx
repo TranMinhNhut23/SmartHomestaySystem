@@ -168,6 +168,14 @@ export default function RootLayout() {
               }} 
             />
             <Stack.Screen 
+              name="admin-complaints" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false,
+                title: ''
+              }} 
+            />
+            <Stack.Screen 
               name="host-request-form" 
               options={{ 
                 presentation: 'modal',
@@ -218,6 +226,13 @@ export default function RootLayout() {
             />
             <Stack.Screen 
               name="edit-profile" 
+              options={{ 
+                presentation: 'modal',
+                headerShown: false 
+              }} 
+            />
+            <Stack.Screen 
+              name="complaint" 
               options={{ 
                 presentation: 'modal',
                 headerShown: false 

@@ -29,6 +29,13 @@ export function AdminQuickActionsSection() {
       gradient: ['#f59e0b', '#f97316'],
     },
     {
+      id: 'complaints',
+      title: 'Duyệt Khiếu Nại',
+      icon: 'alert-circle',
+      route: '/admin-complaints',
+      gradient: ['#ef4444', '#dc2626'],
+    },
+    {
       id: 'statistics',
       title: 'Thống Kê & Báo Cáo',
       icon: 'stats-chart',
